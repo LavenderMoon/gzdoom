@@ -564,8 +564,8 @@ struct State native
 {
 	native State NextState;
 	native int sprite;
-	native int16 Tics;
-	native uint16 TicRange;
+	native double Tics;
+	native double TicRange;
 	native uint8 Frame;		
 	native uint8 UseFlags;	
 	native int Misc1;
@@ -577,6 +577,7 @@ struct State native
 	native bool bSameFrame;
 	native bool bCanRaise;
 	native bool bDehacked;
+	native bool bHalf;
 	
 	native int DistanceTo(state other);
 	native bool ValidateSpriteFrame();

@@ -98,7 +98,7 @@ public:
 	int Amount;					// Amount of item this instance has
 	int MaxAmount;				// Max amount of item this instance can have
 	int InterHubAmount;			// Amount of item that can be kept between hubs or levels
-	int RespawnTics;			// Tics from pickup time to respawn time
+	double RespawnTics;			// Tics from pickup time to respawn time
 	FTextureID Icon;			// Icon to show on status bar or HUD
 	int DropTime;				// Countdown after dropping
 	PClassActor *SpawnPointClass;	// For respawning like Heretic's mace

@@ -1377,8 +1377,8 @@ static int PatchSound (int soundNum)
 
 static int PatchFrame (int frameNum)
 {
-	int result;
-	int tics, misc1, frame;
+	int result, misc1, frame;
+	double tics;
 	FState *info, dummy;
 
 	info = FindState (frameNum);

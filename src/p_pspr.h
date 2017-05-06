@@ -83,7 +83,7 @@ public:
 	int			GetID()		const { return ID; }
 	int			GetSprite()	const { return Sprite; }
 	int			GetFrame()	const { return Frame; }
-	int			GetTics()   const {	return Tics; }
+	double		GetTics()   const {	return Tics; }
 	FState*		GetState()	const { return State; }
 	DPSprite*	GetNext()	      { return Next; }
 	AActor*		GetCaller()	      { return Caller; }
@@ -95,7 +95,7 @@ public:
 	double x, y, alpha;
 	double oldx, oldy;
 	bool firstTic;
-	int Tics;
+	double Tics;
 	int Flags;
 	FRenderStyle Renderstyle;
 

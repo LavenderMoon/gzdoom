@@ -110,8 +110,8 @@ struct FState
 	FState		*NextState;
 	VMFunction	*ActionFunc;
 	int32_t		sprite;
-	int16_t		Tics;
-	uint16_t	TicRange;
+	double_t	Tics;
+	double_t	TicRange;
 	int16_t		Light;
 	uint16_t	StateFlags;
 	uint8_t		Frame;
@@ -158,7 +158,7 @@ public:
 		{
 			return Tics;
 		}
-		return Tics + pr_statetics.GenRand32() % (TicRange + 1);
+		return Tics + fmod((double_t)pr_statetics.GenRand32(), TicRange + 1);
 	}
 	inline int GetMisc1() const
 	{
