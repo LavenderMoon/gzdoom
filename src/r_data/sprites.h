@@ -31,8 +31,9 @@ struct spritedef_t
 {
 	union
 	{
-		char name[5];
+		char name[SPRNAME_SIZE+1];
 		uint32_t dwName;
+		uint64_t qwName;
 	};
 	uint8_t numframes;
 	uint16_t spriteframes;

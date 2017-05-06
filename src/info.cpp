@@ -188,12 +188,12 @@ bool FState::CallAction(AActor *self, AActor *stateowner, FStateParamInfo *info,
 
 int GetSpriteIndex(const char * spritename, bool add)
 {
-	static char lastsprite[5];
+	static char lastsprite[SPRNAME_SIZE + 1];
 	static int lastindex;
 
 	// Make sure that the string is upper case and 4 characters long
-	char upper[5]={0,0,0,0,0};
-	for (int i = 0; spritename[i] != 0 && i < 4; i++)
+	char upper[SPRNAME_SIZE + 1]={0,0,0,0,0};
+	for (int i = 0; spritename[i] != 0 && i < SPRNAME_SIZE; i++)
 	{
 		upper[i] = toupper (spritename[i]);
 	}

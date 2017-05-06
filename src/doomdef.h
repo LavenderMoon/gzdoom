@@ -63,6 +63,9 @@ typedef enum
 // State updates, number of tics / second.
 #define TICRATE 		35
 
+// Set the name limit on a sprite.
+#define SPRNAME_SIZE	8
+
 // Amount of damage done by a telefrag.
 #define TELEFRAG_DAMAGE	1000000
 
