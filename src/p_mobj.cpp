@@ -630,6 +630,10 @@ int AActor::GetTics(FState * newstate)
 	{
 		return tics<<1;
 	}
+	if (newstate->GetHalf())
+	{
+		return (double)tics/2;
+	}
 	return tics;
 }
 

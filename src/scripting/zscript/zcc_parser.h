@@ -283,6 +283,7 @@ struct ZCC_StateLine : ZCC_StatePart
 	BITFIELD bSlow : 1;
 	BITFIELD bNoDelay : 1;
 	BITFIELD bCanRaise : 1;
+	BITFIELD bHalf : 1;
 	FString *Frames;
 	ZCC_Expression *Duration;
 	ZCC_Expression *Offset;

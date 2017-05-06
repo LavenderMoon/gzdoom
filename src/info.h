@@ -71,6 +71,7 @@ enum EStateFlags
 	STF_SAMEFRAME = 16,	// Ignore Frame (except when spawning actor)
 	STF_CANRAISE = 32,	// Allows a monster to be resurrected without waiting for an infinate frame
 	STF_DEHACKED = 64,	// Modified by Dehacked
+	STF_HALF = 128,		// State duration is halved.
 };
 
 enum EStateUseFlags
@@ -138,6 +139,10 @@ public:
 	inline bool GetSlow() const
 	{
 		return !!(StateFlags & STF_SLOW);
+	}
+	inline bool GetHalf() const
+	{
+		return !!(StateFlags & STF_HALF);
 	}
 	inline bool GetNoDelay() const
 	{

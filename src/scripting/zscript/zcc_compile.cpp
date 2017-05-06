@@ -2952,6 +2952,7 @@ void ZCCCompiler::CompileStates()
 					if (sl->bBright) state.StateFlags |= STF_FULLBRIGHT;
 					if (sl->bFast) state.StateFlags |= STF_FAST;
 					if (sl->bSlow) state.StateFlags |= STF_SLOW;
+					if (sl->bHalf) state.StateFlags |= STF_HALF;
 					if (sl->bCanRaise) state.StateFlags |= STF_CANRAISE;
 					if (sl->bNoDelay) state.StateFlags |= STF_NODELAY;
 					if (sl->bNoDelay)

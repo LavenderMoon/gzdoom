@@ -1123,6 +1123,7 @@ DEFINE_FIELD_BIT(FState, StateFlags, bNoDelay, STF_NODELAY)
 DEFINE_FIELD_BIT(FState, StateFlags, bSameFrame, STF_SAMEFRAME)
 DEFINE_FIELD_BIT(FState, StateFlags, bCanRaise, STF_CANRAISE)
 DEFINE_FIELD_BIT(FState, StateFlags, bDehacked, STF_DEHACKED)
+DEFINE_FIELD_BIT(FState, StateFlags, bHalf, STF_HALF)
 
 DEFINE_ACTION_FUNCTION(FState, DistanceTo)
 {

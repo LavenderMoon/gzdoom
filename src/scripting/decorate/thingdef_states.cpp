@@ -285,6 +285,11 @@ do_stop:
 					state.StateFlags |= STF_SLOW;
 					continue;
 				}
+				if (sc.Compare("HALF"))
+				{
+					state.StateFlags |= STF_HALF;
+					continue;
+				}
 				if (sc.Compare("NODELAY"))
 				{
 					if (bag.statedef.GetStateLabelIndex(NAME_Spawn) == bag.statedef.GetStateCount())
