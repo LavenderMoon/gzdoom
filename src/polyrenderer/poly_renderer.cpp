@@ -32,6 +32,7 @@
 #include "po_man.h"
 #include "st_stuff.h"
 #include "g_levellocals.h"
+#include "p_effect.h"
 #include "polyrenderer/scene/poly_light.h"
 #include "swrenderer/scene/r_scene.h"
 #include "swrenderer/drawers/r_draw_rgba.h"
@@ -40,6 +41,7 @@
 
 EXTERN_CVAR(Bool, r_shadercolormaps)
 EXTERN_CVAR(Int, screenblocks)
+EXTERN_CVAR(Float, r_visibility)
 void InitGLRMapinfoData();
 
 /////////////////////////////////////////////////////////////////////////////
@@ -52,7 +54,6 @@ PolyRenderer *PolyRenderer::Instance()
 
 PolyRenderer::PolyRenderer()
 {
-	DrawQueue = std::make_shared<DrawerCommandQueue>(&FrameMemory);
 }
 
 void PolyRenderer::RenderView(player_t *player)
@@ -73,12 +74,11 @@ void PolyRenderer::RenderView(player_t *player)
 	CameraLight *cameraLight = CameraLight::Instance();
 	if (cameraLight->ShaderColormap() && RenderTarget->IsBgra() && !(r_shadercolormaps && screen->Accel2D))
 	{
-		DrawQueue->Push<ApplySpecialColormapRGBACommand>(cameraLight->ShaderColormap(), screen);
+		Threads.MainThread()->DrawQueue->Push<ApplySpecialColormapRGBACommand>(cameraLight->ShaderColormap(), screen);
 	}
 	
-	DrawerThreads::Execute(DrawQueue);
+	Threads.MainThread()->FlushDrawQueue();
 	DrawerThreads::WaitForWorkers();
-	DrawQueue->Clear();
 }
 
 void PolyRenderer::RenderViewToCanvas(AActor *actor, DCanvas *canvas, int x, int y, int width, int height, bool dontmaplines)
@@ -96,7 +96,7 @@ void PolyRenderer::RenderViewToCanvas(AActor *actor, DCanvas *canvas, int x, int
 	canvas->Lock(true);
 	
 	RenderActorView(actor, dontmaplines);
-	DrawerThreads::Execute(DrawQueue);
+	Threads.MainThread()->FlushDrawQueue();
 	DrawerThreads::WaitForWorkers();
 	
 	canvas->Unlock();
@@ -115,13 +115,14 @@ void PolyRenderer::RenderActorView(AActor *actor, bool dontmaplines)
 	
 	DontMapLines = dontmaplines;
 	
+	R_SetupFrame(Viewpoint, Viewwindow, actor);
 	P_FindParticleSubsectors();
 	PO_LinkToSubsectors();
-	R_SetupFrame(Viewpoint, Viewwindow, actor);
 
 	if (APART(R_OldBlend)) NormalLight.Maps = realcolormaps.Maps;
 	else NormalLight.Maps = realcolormaps.Maps + NUMCOLORMAPS * 256 * R_OldBlend;
 
+	Light.SetVisibility(Viewwindow, r_visibility);
 
 	PolyCameraLight::Instance()->SetCamera(Viewpoint, RenderTarget, actor);
 	//Viewport->SetupFreelook();
@@ -138,9 +139,9 @@ void PolyRenderer::RenderActorView(AActor *actor, bool dontmaplines)
 	SetupPerspectiveMatrix();
 	MainPortal.SetViewpoint(WorldToClip, PolyClipPlane(0.0f, 0.0f, 0.0f, 1.0f), GetNextStencilValue());
 	MainPortal.Render(0);
-	Skydome.Render(WorldToClip);
+	Skydome.Render(Threads.MainThread(), WorldToClip);
 	MainPortal.RenderTranslucent(0);
-	PlayerSprites.Render();
+	PlayerSprites.Render(Threads.MainThread());
 
 	Viewpoint.camera->renderflags = savedflags;
 	interpolator.RestoreInterpolations ();
@@ -155,12 +156,10 @@ void PolyRenderer::RenderRemainingPlayerSprites()
 
 void PolyRenderer::ClearBuffers()
 {
-	FrameMemory.Clear();
+	Threads.Clear();
 	PolyStencilBuffer::Instance()->Clear(RenderTarget->GetWidth(), RenderTarget->GetHeight(), 0);
-	PolySubsectorGBuffer::Instance()->Resize(RenderTarget->GetPitch(), RenderTarget->GetHeight());
+	PolyZBuffer::Instance()->Resize(RenderTarget->GetPitch(), RenderTarget->GetHeight());
 	NextStencilValue = 0;
-	SeenLinePortals.clear();
-	SeenMirrors.clear();
 }
 
 void PolyRenderer::SetSceneViewport()
@@ -215,14 +214,4 @@ void PolyRenderer::SetupPerspectiveMatrix()
 		TriMatrix::translate((float)-Viewpoint.Pos.X, (float)-Viewpoint.Pos.Y, (float)-Viewpoint.Pos.Z);
 
 	WorldToClip = TriMatrix::perspective(fovy, ratio, 5.0f, 65535.0f) * worldToView;
-}
-
-bool PolyRenderer::InsertSeenLinePortal(FLinePortal *portal)
-{
-	return SeenLinePortals.insert(portal).second;
-}
-
-bool PolyRenderer::InsertSeenMirror(line_t *mirrorLine)
-{
-	return SeenMirrors.insert(mirrorLine).second;
 }

@@ -2638,7 +2638,7 @@ void D3DFB::DoClear (int left, int top, int right, int bottom, int palcolor, uin
 {
 	if (In2D < 2)
 	{
-		//Super::Clear(left, top, right, bottom, palcolor, color);
+		Super::DoClear(left, top, right, bottom, palcolor, color);
 		return;
 	}
 	if (!InScene)
@@ -2671,7 +2671,7 @@ void D3DFB::DoDim (PalEntry color, float amount, int x1, int y1, int w, int h)
 	}
 	if (In2D < 2)
 	{
-		Super::Dim(color, amount, x1, y1, w, h);
+		Super::DoDim(color, amount, x1, y1, w, h);
 		return;
 	}
 	if (!InScene)

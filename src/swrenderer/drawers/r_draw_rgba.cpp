@@ -142,7 +142,10 @@ namespace swrenderer
 
 	void SWTruecolorDrawers::DrawFuzzColumn(const SpriteDrawerArgs &args)
 	{
-		Queue->Push<DrawFuzzColumnRGBACommand>(args);
+		if (r_fuzzscale)
+			Queue->Push<DrawScaledFuzzColumnRGBACommand>(args);
+		else
+			Queue->Push<DrawFuzzColumnRGBACommand>(args);
 		R_UpdateFuzzPos(args);
 	}
 
@@ -201,6 +204,11 @@ namespace swrenderer
 		Queue->Push<DrawSpriteTranslatedRevSubClamp32Command>(args);
 	}
 
+	void SWTruecolorDrawers::DrawVoxelBlocks(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount)
+	{
+		Queue->Push<DrawVoxelBlocksRGBACommand>(args, blocks, blockcount);
+	}
+
 	void SWTruecolorDrawers::DrawSpan(const SpanDrawerArgs &args)
 	{
 		Queue->Push<DrawSpan32Command>(args);
@@ -239,6 +247,69 @@ namespace swrenderer
 	void SWTruecolorDrawers::DrawDoubleSkyColumn(const SkyDrawerArgs &args)
 	{
 		Queue->Push<DrawSkyDouble32Command>(args);
+	}
+
+	/////////////////////////////////////////////////////////////////////////////
+
+	DrawScaledFuzzColumnRGBACommand::DrawScaledFuzzColumnRGBACommand(const SpriteDrawerArgs &drawerargs)
+	{
+		_x = drawerargs.FuzzX();
+		_yl = drawerargs.FuzzY1();
+		_yh = drawerargs.FuzzY2();
+		_destorg = drawerargs.Viewport()->GetDest(0, 0);
+		_pitch = drawerargs.Viewport()->RenderTarget->GetPitch();
+		_fuzzpos = fuzzpos;
+		_fuzzviewheight = fuzzviewheight;
+	}
+
+	void DrawScaledFuzzColumnRGBACommand::Execute(DrawerThread *thread)
+	{
+		int x = _x;
+		int yl = MAX(_yl, 1);
+		int yh = MIN(_yh, _fuzzviewheight);
+
+		int count = thread->count_for_thread(yl, yh - yl + 1);
+		if (count <= 0) return;
+
+		int pitch = _pitch;
+		uint32_t *dest = _pitch * yl + x + (uint32_t*)_destorg;
+
+		int scaled_x = x * 200 / _fuzzviewheight;
+		int fuzz_x = fuzz_random_x_offset[scaled_x % FUZZ_RANDOM_X_SIZE] + _fuzzpos;
+
+		fixed_t fuzzstep = (200 << FRACBITS) / _fuzzviewheight;
+		fixed_t fuzzcount = FUZZTABLE << FRACBITS;
+		fixed_t fuzz = (fuzz_x << FRACBITS) + yl * fuzzstep;
+
+		dest = thread->dest_for_thread(yl, pitch, dest);
+		pitch *= thread->num_cores;
+
+		fuzz += fuzzstep * thread->skipped_by_thread(yl);
+		fuzz %= fuzzcount;
+		fuzzstep *= thread->num_cores;
+
+		while (count > 0)
+		{
+			int alpha = 32 - fuzzoffset[fuzz >> FRACBITS];
+
+			uint32_t bg = *dest;
+			uint32_t red = (RPART(bg) * alpha) >> 5;
+			uint32_t green = (GPART(bg) * alpha) >> 5;
+			uint32_t blue = (BPART(bg) * alpha) >> 5;
+
+			*dest = 0xff000000 | (red << 16) | (green << 8) | blue;
+			dest += pitch;
+
+			fuzz += fuzzstep;
+			if (fuzz >= fuzzcount) fuzz -= fuzzcount;
+
+			count--;
+		}
+	}
+
+	FString DrawScaledFuzzColumnRGBACommand::DebugInfo()
+	{
+		return "DrawScaledFuzzColumn";
 	}
 
 	/////////////////////////////////////////////////////////////////////////////
@@ -858,4 +929,44 @@ namespace swrenderer
 		return "DrawParticle";
 	}
 
+	/////////////////////////////////////////////////////////////////////////////
+
+	DrawVoxelBlocksRGBACommand::DrawVoxelBlocksRGBACommand(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount) : args(args), blocks(blocks), blockcount(blockcount)
+	{
+	}
+
+	void DrawVoxelBlocksRGBACommand::Execute(DrawerThread *thread)
+	{
+		int pitch = args.Viewport()->RenderTarget->GetPitch();
+		uint8_t *destorig = args.Viewport()->RenderTarget->GetBuffer();
+
+		DrawSprite32Command drawer(args);
+		drawer.args.dc_texturefracx = 0;
+		drawer.args.dc_source2 = 0;
+		for (int i = 0; i < blockcount; i++)
+		{
+			const VoxelBlock &block = blocks[i];
+
+			double v = block.vPos / (double)block.voxelsCount / FRACUNIT;
+			double vstep = block.vStep / (double)block.voxelsCount / FRACUNIT;
+			drawer.args.dc_texturefrac = (int)(v * (1 << 30));
+			drawer.args.dc_iscale = (int)(vstep * (1 << 30));
+			drawer.args.dc_source = block.voxels;
+			drawer.args.dc_textureheight = block.voxelsCount;
+			drawer.args.dc_count = block.height;
+			drawer.args.dc_dest_y = block.y;
+			drawer.args.dc_dest = destorig + (block.x + block.y * pitch) * 4;
+
+			for (int j = 0; j < block.width; j++)
+			{
+				drawer.Execute(thread);
+				drawer.args.dc_dest += 4;
+			}
+		}
+	}
+
+	FString DrawVoxelBlocksRGBACommand::DebugInfo()
+	{
+		return "DrawVoxelBlocks";
+	}
 }

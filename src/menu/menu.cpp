@@ -57,6 +57,7 @@
 #include "textures/textures.h"
 #include "vm.h"
 #include "events.h"
+#include "gl/renderer/gl_renderer.h" // for menu blur
 
 //
 // Todo: Move these elsewhere
@@ -64,7 +65,7 @@
 CVAR (Float, mouse_sensitivity, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, show_messages, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, show_obituaries, true, CVAR_ARCHIVE)
-CVAR(Bool, m_showinputgrid, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR (Int, m_showinputgrid, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool, m_blockcontrollers, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 
@@ -784,6 +785,8 @@ void M_Drawer (void)
 
 	if (CurrentMenu != nullptr && menuactive != MENU_Off) 
 	{
+		if (GLRenderer)
+			GLRenderer->BlurScene(gameinfo.bluramount);
 		if (!CurrentMenu->DontDim)
 		{
 			screen->Dim(fade);
@@ -1121,7 +1124,7 @@ DEFINE_FIELD(FOptionMenuSettings, mLinespacing)
 
 struct IJoystickConfig;
 // These functions are used by dynamic menu creation.
-DMenuItemBase * CreateOptionMenuItemStaticText(const char *name, bool v)
+DMenuItemBase * CreateOptionMenuItemStaticText(const char *name, int v)
 {
 	auto c = PClass::FindClass("OptionMenuItemStaticText");
 	auto p = c->CreateNew();

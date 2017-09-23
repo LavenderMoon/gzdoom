@@ -79,6 +79,9 @@ CVAR (Bool, cl_showsprees, true, CVAR_ARCHIVE)
 CVAR (Bool, cl_showmultikills, true, CVAR_ARCHIVE)
 EXTERN_CVAR (Bool, show_obituaries)
 
+CVAR (Float, sv_damagefactormobj, 1.0, CVAR_SERVERINFO|CVAR_CHEAT)
+CVAR (Float, sv_damagefactorfriendly, 1.0, CVAR_SERVERINFO|CVAR_CHEAT)
+CVAR (Float, sv_damagefactorplayer, 1.0, CVAR_SERVERINFO|CVAR_CHEAT)
 
 FName MeansOfDeath;
 
@@ -187,6 +190,7 @@ void SexMessage (const char *from, char *to, int gender, const char *victim, con
 void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker, int dmgflags)
 {
 	FName mod;
+	FString ret;
 	const char *message;
 	const char *messagename;
 	char gendermessage[1024];
@@ -218,17 +222,17 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker, int dmgf
 	}
 
 	FString obit = DamageTypeDefinition::GetObituary(mod);
-	if (attacker == nullptr) messagename = obit;
+	if (attacker == nullptr && obit.IsNotEmpty()) messagename = obit;
 	else
 	{
 		switch (mod)
 		{
-		case NAME_Suicide:		message = "$OB_SUICIDE";	break;
-		case NAME_Falling:		message = "$OB_FALLING";	break;
-		case NAME_Crush:		message = "$OB_CRUSH";		break;
-		case NAME_Exit:			message = "$OB_EXIT";		break;
-		case NAME_Drowning:		message = "$OB_WATER";		break;
-		case NAME_Slime:		message = "$OB_SLIME";		break;
+		case NAME_Suicide:		messagename = "$OB_SUICIDE";	break;
+		case NAME_Falling:		messagename = "$OB_FALLING";	break;
+		case NAME_Crush:		messagename = "$OB_CRUSH";		break;
+		case NAME_Exit:			messagename = "$OB_EXIT";		break;
+		case NAME_Drowning:		messagename = "$OB_WATER";		break;
+		case NAME_Slime:		messagename = "$OB_SLIME";		break;
 		case NAME_Fire:			messagename = "$OB_LAVA";		break;
 		}
 	}
@@ -250,7 +254,6 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker, int dmgf
 			IFVIRTUALPTR(attacker, AActor, GetObituary)
 			{
 				VMValue params[] = { attacker, self, inflictor, mod.GetIndex(), !!(dmgflags & DMG_PLAYERATTACK) };
-				FString ret;
 				VMReturn rett(&ret);
 				VMCall(func, params, countof(params), &rett, 1);
 				if (ret.IsNotEmpty()) message = ret;
@@ -963,7 +966,7 @@ static int DamageMobj (AActor *target, AActor *inflictor, AActor *source, int da
 		}
 		return 0;
 	}
-	if (target == source && damage < TELEFRAG_DAMAGE)
+	if (target == source && (!telefragDamage || target->flags7 & MF7_LAXTELEFRAGDMG))
 	{
 		damage = int(damage * target->SelfDamageFactor);
 	}
@@ -1036,7 +1039,17 @@ static int DamageMobj (AActor *target, AActor *inflictor, AActor *source, int da
 			if (player && damage > 1)
 			{
 				// Take half damage in trainer mode
-				damage = int(damage * G_SkillProperty(SKILLP_DamageFactor));
+				damage = int(damage * G_SkillProperty(SKILLP_DamageFactor) * sv_damagefactorplayer);
+			}
+			else if (!player && damage > 1 && !(target->flags & MF_FRIENDLY))
+			{
+				// inflict scaled damage to non-players
+				damage = int(damage * sv_damagefactormobj);
+			}
+			else if (!player && damage > 1 && (target->flags & MF_FRIENDLY))
+			{
+				// inflict scaled damage to non-player friends
+				damage = int(damage * sv_damagefactorfriendly);
 			}
 			// Special damage types
 			if (inflictor)
@@ -1360,7 +1373,9 @@ static int DamageMobj (AActor *target, AActor *inflictor, AActor *source, int da
 			// but telefragging should still do enough damage to kill the player)
 			// Ignore players that are already dead.
 			// [MC]Buddha2 absorbs telefrag damage, and anything else thrown their way.
-			if (!(flags & DMG_FORCED) && (((player->cheats & CF_BUDDHA2) || (((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && !telefragDamage)) && (player->playerstate != PST_DEAD)))
+			if (!(flags & DMG_FORCED) && (((player->cheats & CF_BUDDHA2) || (((player->cheats & CF_BUDDHA) ||
+				(player->mo->FindInventory (PClass::FindActor(NAME_PowerBuddha),true) != nullptr) ||
+				(player->mo->flags7 & MF7_BUDDHA)) && !telefragDamage)) && (player->playerstate != PST_DEAD)))
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
 				player->mo->health = target->health = player->health = 1;
@@ -1863,7 +1878,7 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage, bool playPain
 		return;
 	}
 	// Take half damage in trainer mode
-	damage = int(damage * G_SkillProperty(SKILLP_DamageFactor));
+	damage = int(damage * G_SkillProperty(SKILLP_DamageFactor) * sv_damagefactorplayer);
 	// Handle passive damage modifiers (e.g. PowerProtection)
 	damage = target->GetModifiedDamage(player->poisontype, damage, true);
 	// Modify with damage factors
@@ -1896,7 +1911,9 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage, bool playPain
 	target->health -= damage;
 	if (target->health <= 0)
 	{ // Death
-		if ((((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
+		if ((((player->cheats & CF_BUDDHA) || (player->cheats & CF_BUDDHA2) ||
+			(player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE) ||
+			(player->mo->FindInventory (PClass::FindActor(NAME_PowerBuddha),true) != nullptr))
 		{ // [SP] Save the player... 
 			player->health = target->health = 1;
 		}
@@ -1961,6 +1978,15 @@ CCMD (kill)
 
 			Net_WriteByte (DEM_GENERICCHEAT);
 			Net_WriteByte (CHT_MASSACRE);
+		}
+		else if (!stricmp (argv[1], "baddies"))
+		{
+			// Kill all the unfriendly monsters
+			if (CheckCheatmode ())
+				return;
+
+			Net_WriteByte (DEM_GENERICCHEAT);
+			Net_WriteByte (CHT_MASSACRE2);
 		}
 		else
 		{

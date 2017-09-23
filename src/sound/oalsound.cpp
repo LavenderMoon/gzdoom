@@ -39,6 +39,7 @@
 #include <dlfcn.h>
 #endif
 
+#include <functional>
 #include <memory>
 #include <chrono>
 
@@ -65,6 +66,7 @@ FModule OpenALModule{"OpenAL"};
 
 CVAR (String, snd_aldevice, "Default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, snd_efx, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (String, snd_alresampler, "Default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 #ifdef _WIN32
 #define OPENALLIB "openal32.dll"
@@ -117,6 +119,32 @@ void I_BuildALDeviceList(FOptionValues *opt)
 
 			names += strlen(names) + 1;
 		}
+	}
+#endif
+}
+
+void I_BuildALResamplersList(FOptionValues *opt)
+{
+	opt->mValues.Resize(1);
+	opt->mValues[0].TextValue = "Default";
+	opt->mValues[0].Text = "Default";
+
+#ifndef NO_OPENAL
+	if (!IsOpenALPresent())
+		return;
+	if (!alcGetCurrentContext() || !alIsExtensionPresent("AL_SOFT_source_resampler"))
+		return;
+
+	LPALGETSTRINGISOFT alGetStringiSOFT = reinterpret_cast<LPALGETSTRINGISOFT>(alGetProcAddress("alGetStringiSOFT"));
+	ALint num_resamplers = alGetInteger(AL_NUM_RESAMPLERS_SOFT);
+
+	unsigned int idx = opt->mValues.Reserve(num_resamplers);
+	for(ALint i = 0;i < num_resamplers;++i)
+	{
+		const ALchar *name = alGetStringiSOFT(AL_RESAMPLER_NAME_SOFT, i);
+		opt->mValues[idx].TextValue = name;
+		opt->mValues[idx].Text = name;
+		++idx;
 	}
 #endif
 }
@@ -258,6 +286,8 @@ class OpenALSoundStream : public SoundStream
 		}
 		if(Renderer->AL.EXT_SOURCE_RADIUS)
 			alSourcef(Source, AL_SOURCE_RADIUS, 0.f);
+		if(Renderer->AL.SOFT_source_spatialize)
+			alSourcei(Source, AL_SOURCE_SPATIALIZE_SOFT, AL_AUTO_SOFT);
 
 		alGenBuffers(BufferCount, Buffers);
 		return (getALError() == AL_NO_ERROR);
@@ -788,6 +818,8 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 	AL.EXT_SOURCE_RADIUS = !!alIsExtensionPresent("AL_EXT_SOURCE_RADIUS");
 	AL.SOFT_deferred_updates = !!alIsExtensionPresent("AL_SOFT_deferred_updates");
 	AL.SOFT_loop_points = !!alIsExtensionPresent("AL_SOFT_loop_points");
+	AL.SOFT_source_resampler = !!alIsExtensionPresent("AL_SOFT_source_resampler");
+	AL.SOFT_source_spatialize = !!alIsExtensionPresent("AL_SOFT_source_spatialize");
 
 	alDopplerFactor(0.5f);
 	alSpeedOfSound(343.3f * 96.0f);
@@ -805,6 +837,9 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 		alDeferUpdatesSOFT = _wrap_DeferUpdatesSOFT;
 		alProcessUpdatesSOFT = _wrap_ProcessUpdatesSOFT;
 	}
+
+	if(AL.SOFT_source_resampler)
+		LOAD_FUNC(alGetStringiSOFT);
 
 	if(ALC.SOFT_pause_device)
 	{
@@ -958,6 +993,26 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 
 	if(EnvSlot)
 		Printf("  EFX enabled\n");
+
+	if(AL.SOFT_source_resampler && strcmp(*snd_alresampler, "Default") != 0)
+	{
+		const ALint num_resamplers = alGetInteger(AL_NUM_RESAMPLERS_SOFT);
+		ALint ridx = alGetInteger(AL_DEFAULT_RESAMPLER_SOFT);
+		ALint i;
+
+		for(i = 0;i < num_resamplers;i++)
+		{
+			if(strcmp(alGetStringiSOFT(AL_RESAMPLER_NAME_SOFT, i), *snd_alresampler) == 0)
+			{
+				ridx = i;
+				break;
+			}
+		}
+		if(i == num_resamplers)
+			Printf(TEXTCOLOR_RED" Failed to find resampler " TEXTCOLOR_ORANGE"%s\n", *snd_alresampler);
+		else for(ALint src : Sources)
+			alSourcei(src, AL_SOURCE_RESAMPLER_SOFT, ridx);
+	}
 }
 #undef LOAD_DEV_FUNC
 #undef LOAD_FUNC
@@ -1126,6 +1181,9 @@ std::pair<SoundHandle,bool> OpenALSoundRenderer::LoadSoundRaw(uint8_t *sfxdata, 
 
 	if(length == 0) return std::make_pair(retval, true);
 
+	/* Only downmix to mono if we can't spatialize multi-channel sounds. */
+	monoize = monoize && !AL.SOFT_source_spatialize;
+
 	if(bits == -8)
 	{
 		// Simple signed->unsigned conversion
@@ -1213,7 +1271,7 @@ std::pair<SoundHandle,bool> OpenALSoundRenderer::LoadSoundRaw(uint8_t *sfxdata, 
 	}
 
 	retval.data = MAKE_PTRID(buffer);
-	return std::make_pair(retval, channels==1);
+	return std::make_pair(retval, AL.SOFT_source_spatialize || channels==1);
 }
 
 void FindLoopTags(FileReader *fr, uint32_t *start, bool *startass, uint32_t *end, bool *endass);
@@ -1228,6 +1286,9 @@ std::pair<SoundHandle,bool> OpenALSoundRenderer::LoadSound(uint8_t *sfxdata, int
 	int srate;
 	uint32_t loop_start = 0, loop_end = ~0u;
 	bool startass = false, endass = false;
+
+	/* Only downmix to mono if we can't spatialize multi-channel sounds. */
+	monoize = monoize && !AL.SOFT_source_spatialize;
 
 	if (!memcmp(sfxdata, "OggS", 4) || !memcmp(sfxdata, "FLAC", 4))
 	{
@@ -1326,7 +1387,7 @@ std::pair<SoundHandle,bool> OpenALSoundRenderer::LoadSound(uint8_t *sfxdata, int
 		pBuffer->type = type;
 		pBuffer->srate = srate;
 	}
-	return std::make_pair(retval, (chans == ChannelConfig_Mono || monoize));
+	return std::make_pair(retval, AL.SOFT_source_spatialize || chans == ChannelConfig_Mono || monoize);
 }
 
 std::pair<SoundHandle, bool> OpenALSoundRenderer::LoadSoundBuffered(FSoundLoadBuffer *pBuffer, bool monoize)
@@ -1337,6 +1398,9 @@ std::pair<SoundHandle, bool> OpenALSoundRenderer::LoadSoundBuffered(FSoundLoadBu
 	auto type = pBuffer->type;
 	auto chans = pBuffer->chans;
 	uint32_t loop_start = pBuffer->loop_start, loop_end = pBuffer->loop_end;
+
+	/* Only downmix to mono if we can't spatialize multi-channel sounds. */
+	monoize = monoize && !AL.SOFT_source_spatialize;
 
 	if (chans == ChannelConfig_Mono || monoize)
 	{
@@ -1410,7 +1474,7 @@ std::pair<SoundHandle, bool> OpenALSoundRenderer::LoadSoundBuffered(FSoundLoadBu
 	}
 
 	retval.data = MAKE_PTRID(buffer);
-	return std::make_pair(retval, (chans == ChannelConfig_Mono || monoize));
+	return std::make_pair(retval, AL.SOFT_source_spatialize || chans == ChannelConfig_Mono || monoize);
 }
 
 void OpenALSoundRenderer::UnloadSound(SoundHandle sfx)
@@ -1509,6 +1573,8 @@ FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int 
 	alSourcef(source, AL_GAIN, SfxVolume*vol);
 	if(AL.EXT_SOURCE_RADIUS)
 		alSourcef(source, AL_SOURCE_RADIUS, 0.f);
+	if(AL.SOFT_source_spatialize)
+		alSourcei(source, AL_SOURCE_SPATIALIZE_SOFT, AL_AUTO_SOFT);
 
 	if(EnvSlot)
 	{
@@ -1534,7 +1600,7 @@ FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int 
 	else
 	{
 		if((chanflags&SNDF_ABSTIME))
-			alSourcef(source, AL_SEC_OFFSET, reuse_chan->StartTime.Lo/1000.f);
+			alSourcei(source, AL_SAMPLE_OFFSET, reuse_chan->StartTime.Lo);
 		else
 		{
 			float offset = std::chrono::duration_cast<std::chrono::duration<float>>(
@@ -1717,6 +1783,8 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
 
 	alSourcef(source, AL_MAX_GAIN, SfxVolume);
 	alSourcef(source, AL_GAIN, SfxVolume*vol);
+	if(AL.SOFT_source_spatialize)
+		alSourcei(source, AL_SOURCE_SPATIALIZE_SOFT, AL_TRUE);
 
 	if(EnvSlot)
 	{
@@ -1742,7 +1810,7 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
 	else
 	{
 		if((chanflags&SNDF_ABSTIME))
-			alSourcef(source, AL_SEC_OFFSET, reuse_chan->StartTime.Lo/1000.f);
+			alSourcei(source, AL_SAMPLE_OFFSET, reuse_chan->StartTime.Lo);
 		else
 		{
 			float offset = std::chrono::duration_cast<std::chrono::duration<float>>(
@@ -2251,18 +2319,6 @@ void OpenALSoundRenderer::PrintDriversList()
 			   drivers);
 		drivers += strlen(drivers)+1;
 	}
-}
-
-MIDIDevice* OpenALSoundRenderer::CreateMIDIDevice() const
-{
-#ifdef _WIN32
-	extern unsigned mididevice;
-	return CreateWinMIDIDevice(mididevice);
-#elif defined __APPLE__
-	return CreateAudioToolboxMIDIDevice();
-#else
-	return new OPLMIDIDevice(nullptr);
-#endif
 }
 
 void OpenALSoundRenderer::PurgeStoppedSources()

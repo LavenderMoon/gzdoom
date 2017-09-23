@@ -726,7 +726,7 @@ int FRemapTable::StoreTranslation(int slot)
 //
 //----------------------------------------------------------------------------
 
-TArray<PalEntry> BloodTranslationColors;
+static TArray<PalEntry> BloodTranslationColors;
 
 int CreateBloodTranslation(PalEntry color)
 {
@@ -754,10 +754,12 @@ int CreateBloodTranslation(PalEntry color)
 		I_Error("Too many blood colors");
 	}
 	FRemapTable *trans = new FRemapTable;
-	for (i = 0; i < 256; i++)
+	trans->Palette[0] = 0;
+	trans->Remap[0] = 0;
+	for (i = 1; i < 256; i++)
 	{
 		int bright = MAX(MAX(GPalette.BaseColors[i].r, GPalette.BaseColors[i].g), GPalette.BaseColors[i].b);
-		PalEntry pe = PalEntry(color.r*bright/255, color.g*bright/255, color.b*bright/255);
+		PalEntry pe = PalEntry(255, color.r*bright/255, color.g*bright/255, color.b*bright/255);
 		int entry = ColorMatcher.Pick(pe.r, pe.g, pe.b);
 
 		trans->Palette[i] = pe;
@@ -940,7 +942,9 @@ void R_InitTranslationTables ()
 		IcePaletteRemap[i] = ColorMatcher.Pick (IcePalette[i][0], IcePalette[i][1], IcePalette[i][2]);
 	}
 	FRemapTable *remap = translationtables[TRANSLATION_Standard][7];
-	for (i = 0; i < 256; ++i)
+	remap->Remap[0] = 0;
+	remap->Palette[0] = 0;
+	for (i = 1; i < 256; ++i)
 	{
 		int r = GPalette.BaseColors[i].r;
 		int g = GPalette.BaseColors[i].g;
@@ -953,7 +957,9 @@ void R_InitTranslationTables ()
 	// The alphatexture translation. Since alphatextures use the red channel this is just a standard grayscale mapping.
 	PushIdentityTable(TRANSLATION_Standard);
 	remap = translationtables[TRANSLATION_Standard][8];
-	for (i = 0; i < 256; i++)
+	remap->Remap[0] = 0;
+	remap->Palette[0] = 0;
+	for (i = 1; i < 256; i++)
 	{
 		remap->Remap[i] = i;
 		remap->Palette[i] = PalEntry(255, i, i, i);

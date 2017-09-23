@@ -119,6 +119,8 @@ void GLPortal::ClearScreen()
 	gl_RenderState.mViewMatrix.loadIdentity();
 	gl_RenderState.mProjectionMatrix.ortho(0, SCREENWIDTH, SCREENHEIGHT, 0, -1.0f, 1.0f);
 	gl_RenderState.ApplyMatrices();
+	gl_RenderState.SetColor(0, 0, 0);
+	gl_RenderState.Apply();
 
 	glDisable(GL_MULTISAMPLE);
 	glDisable(GL_DEPTH_TEST);
@@ -203,7 +205,6 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 				else if (gl_noquery) doquery = false;
 
 				// If occlusion query is supported let's use it to avoid rendering portals that aren't visible
-				if (!QueryObject && doquery) glGenQueries(1, &QueryObject);
 				if (QueryObject)
 				{
 					glBeginQuery(GL_SAMPLES_PASSED, QueryObject);
@@ -1260,6 +1261,21 @@ void GLEEHorizonPortal::DrawContents()
 
 
 
+}
+
+void GLPortal::Initialize()
+{
+	assert(0 == QueryObject);
+	glGenQueries(1, &QueryObject);
+}
+
+void GLPortal::Shutdown()
+{
+	if (0 != QueryObject)
+	{
+		glDeleteQueries(1, &QueryObject);
+		QueryObject = 0;
+	}
 }
 
 const char *GLSkyPortal::GetName() { return "Sky"; }

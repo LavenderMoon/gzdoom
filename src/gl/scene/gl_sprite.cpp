@@ -39,6 +39,7 @@
 #include "g_levellocals.h"
 #include "events.h"
 #include "actorinlines.h"
+#include "r_data/r_vanillatrans.h"
 
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
@@ -75,10 +76,11 @@ CUSTOM_CVAR(Int, gl_fuzztype, 0, CVAR_ARCHIVE)
 }
 
 EXTERN_CVAR (Float, transsouls)
+EXTERN_CVAR (Bool, r_debug_disable_vis_filter)
 
 extern TArray<spritedef_t> sprites;
 extern TArray<spriteframe_t> SpriteFrames;
-extern TArray<PalEntry> BloodTranslationColors;
+extern uint32_t r_renderercaps;
 
 enum HWRenderStyle
 {
@@ -319,6 +321,12 @@ void GLSprite::Draw(int pass)
 	}
 	else if (modelframe == nullptr)
 	{
+		int tm, sb, db, be;
+
+		// This still needs to set the texture mode. As blend mode it will always use GL_ONE/GL_ZERO
+		gl_GetRenderStyle(RenderStyle, false, false, &tm, &sb, &db, &be);
+		gl_RenderState.SetTextureMode(tm);
+
 		glEnable(GL_POLYGON_OFFSET_FILL);
 		glPolygonOffset(-1.0f, -128.0f);
 	}
@@ -326,7 +334,10 @@ void GLSprite::Draw(int pass)
 	{
 		if (gl_lights && GLRenderer->mLightCount && mDrawer->FixedColormap == CM_DEFAULT && !fullbright)
 		{
-			gl_SetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL);
+			if (modelframe && !particle)
+				gl_SetDynModelLight(gl_light_sprites ? actor : NULL, false);
+			else
+				gl_SetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL);
 		}
 		sector_t *cursec = actor ? actor->Sector : particle ? particle->subsector->sector : nullptr;
 		if (cursec != nullptr)
@@ -677,6 +688,13 @@ void GLSprite::Process(AActor* thing, sector_t * sector, int thruportal)
 		if (!(thing->flags & MF_STEALTH) || !mDrawer->FixedColormap || !gl_enhanced_nightvision || thing == camera)
 			return;
 	}
+
+	// check renderrequired vs ~r_rendercaps, if anything matches we don't support that feature,
+	// check renderhidden vs r_rendercaps, if anything matches we do support that feature and should hide it.
+	if ((!r_debug_disable_vis_filter && !!(thing->RenderRequired & ~r_renderercaps)) ||
+		(!!(thing->RenderHidden & r_renderercaps)))
+		return;
+
 	int spritenum = thing->sprite;
 	DVector2 sprscale = thing->Scale;
 	if (thing->player != NULL)
@@ -800,7 +818,7 @@ void GLSprite::Process(AActor* thing, sector_t * sector, int thruportal)
 				sprangle = 0.;
 				rot = 0;
 			}
-			patch = sprites[spritenum].GetSpriteFrame(thing->frame, rot, sprangle, &mirror, !!(thing->flags7 & MF7_SPRITEFLIP));
+			patch = sprites[spritenum].GetSpriteFrame(thing->frame, rot, sprangle, &mirror, !!(thing->renderflags & RF_SPRITEFLIP));
 		}
 
 		if (!patch.isValid()) return;
@@ -816,7 +834,7 @@ void GLSprite::Process(AActor* thing, sector_t * sector, int thruportal)
 		gltexture->GetSpriteRect(&r);
 
 		// [SP] SpriteFlip
-		if (thing->flags7 & MF7_SPRITEFLIP)
+		if (thing->renderflags & RF_SPRITEFLIP)
 			thing->renderflags ^= RF_XFLIP;
 
 		if (mirror ^ !!(thing->renderflags & RF_XFLIP))
@@ -831,7 +849,7 @@ void GLSprite::Process(AActor* thing, sector_t * sector, int thruportal)
 			ur = gltexture->GetSpriteUL();
 		}
 
-		if (thing->flags7 & MF7_SPRITEFLIP) // [SP] Flip back
+		if (thing->renderflags & RF_SPRITEFLIP) // [SP] Flip back
 			thing->renderflags ^= RF_XFLIP;
 
 		r.Scale(sprscale.X, sprscale.Y);
@@ -992,7 +1010,18 @@ void GLSprite::Process(AActor* thing, sector_t * sector, int thruportal)
 	{
 		trans = 1.f;
 	}
-
+	if (r_UseVanillaTransparency)
+	{
+		// [SP] "canonical transparency" - with the flip of a CVar, disable transparency for Doom objects,
+		//   and disable 'additive' translucency for certain objects from other games.
+		if (thing->renderflags & RF_ZDOOMTRANS)
+		{
+			trans = 1.f;
+			RenderStyle.BlendOp = STYLEOP_Add;
+			RenderStyle.SrcAlpha = STYLEALPHA_One;
+			RenderStyle.DestAlpha = STYLEALPHA_Zero;
+		}
+	}
 	if (trans >= 1.f - FLT_EPSILON && RenderStyle.BlendOp != STYLEOP_Shadow && (
 		(RenderStyle.SrcAlpha == STYLEALPHA_One && RenderStyle.DestAlpha == STYLEALPHA_Zero) ||
 		(RenderStyle.SrcAlpha == STYLEALPHA_Src && RenderStyle.DestAlpha == STYLEALPHA_InvSrc)
@@ -1185,10 +1214,11 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	y = particle->Pos.Y;
 	z = particle->Pos.Z;
 	
-	float scalefac=particle->size/4.0f;
-	// [BB] The smooth particles are smaller than the other ones. Compensate for this here.
-	if (gl_particles_style==2)
-		scalefac *= 1.7;
+	float factor;
+	if (gl_particles_style == 1) factor = 1.3f / 7.f;
+	else if (gl_particles_style == 2) factor = 2.5f / 7.f;
+	else factor = 1 / 7.f;
+	float scalefac=particle->size * factor;
 
 	float viewvecX = GLRenderer->mViewVector.X;
 	float viewvecY = GLRenderer->mViewVector.Y;

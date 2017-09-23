@@ -161,6 +161,7 @@ DEFINE_FIELD_X(FCheckPosition, FCheckPosition, ceilingline);
 DEFINE_FIELD_X(FCheckPosition, FCheckPosition, stepthing);
 DEFINE_FIELD_X(FCheckPosition, FCheckPosition, DoRipping);
 DEFINE_FIELD_X(FCheckPosition, FCheckPosition, portalstep);
+DEFINE_FIELD_X(FCheckPosition, FCheckPosition, portalgroup);
 DEFINE_FIELD_X(FCheckPosition, FCheckPosition, PushTime);
 
 //==========================================================================
@@ -288,6 +289,7 @@ static bool PIT_FindFloorCeiling(FMultiBlockLinesIterator &mit, FMultiBlockLines
 		}
 	}
 
+	// If we are stepping through a portal the line's opening must be checked, regardless of the NOFLOOR flag
 	if (!(flags & FFCF_NOFLOOR))
 	{
 		if (open.bottom > tmf.floorz)
@@ -905,6 +907,7 @@ bool PIT_CheckLine(FMultiBlockLinesIterator &mit, FMultiBlockLinesIterator::Chec
 				tm.floorpic = cres.line->sidedef[0]->GetTexture(side_t::mid);
 				tm.floorterrain = 0;
 				tm.portalstep = true;
+				tm.portalgroup = cres.line->frontsector->GetOppositePortalGroup(sector_t::ceiling);
 				return true;
 			}
 		}
@@ -999,6 +1002,7 @@ bool PIT_CheckLine(FMultiBlockLinesIterator &mit, FMultiBlockLinesIterator::Chec
 			{
 				// Actor is stepping through a portal.
 				tm.portalstep = true;
+				tm.portalgroup = tm.thing->Sector->GetOppositePortalGroup(sector_t::ceiling);
 				return true;
 			}
 		}
@@ -1051,7 +1055,8 @@ bool PIT_CheckLine(FMultiBlockLinesIterator &mit, FMultiBlockLinesIterator::Chec
 		}
 	}
 
-	if (!(cres.portalflags & FFCF_NOFLOOR))
+	// If we are stepping through a portal the line's opening must be checked, regardless of the NOFLOOR flag
+	if (!(cres.portalflags & FFCF_NOFLOOR) || (tm.portalstep && open.bottomsec->PortalGroup == tm.portalgroup))
 	{
 		if (open.bottom > tm.floorz)
 		{
@@ -2763,7 +2768,11 @@ bool P_CheckMove(AActor *thing, const DVector2 &pos, int flags)
 	FCheckPosition tm;
 	double		newz = thing->Z();
 
-	if (!P_CheckPosition(thing, pos, tm))
+	auto f1 = thing->flags & MF_PICKUP;
+	thing->flags &= ~MF_PICKUP;
+	auto res = P_CheckPosition(thing, pos, tm);
+	thing->flags |= f1;
+	if (!res)
 	{
 		// Ignore PCM_DROPOFF. Not necessary here: a little later it is.
 		if (!flags || (!(flags & PCM_NOACTORS) && !(flags & PCM_NOLINES)))
@@ -4386,7 +4395,7 @@ static ETraceStatus CheckForActor(FTraceResults &res, void *userdata)
 //==========================================================================
 
 AActor *P_LineAttack(AActor *t1, DAngle angle, double distance,
-	DAngle pitch, int damage, FName damageType, PClassActor *pufftype, int flags, FTranslatedLineTarget*victim, int *actualdamage)
+	DAngle pitch, int damage, FName damageType, PClassActor *pufftype, int flags, FTranslatedLineTarget*victim, int *actualdamage, double sz)
 {
 	bool nointeract = !!(flags & LAF_NOINTERACT);
 	DVector3 direction;
@@ -4430,6 +4439,12 @@ AActor *P_LineAttack(AActor *t1, DAngle angle, double distance,
 	{
 		shootz += 8;
 	}
+
+	// [MC] If overriding, set it to the base of the actor.
+	// Offset by the amount specified.
+	if (flags & LAF_OVERRIDEZ)
+		shootz = t1->Z();
+	shootz += sz;
 
 	// We need to check the defaults of the replacement here
 	AActor *puffDefaults = GetDefaultByType(pufftype->GetReplacement());
@@ -4687,7 +4702,7 @@ AActor *P_LineAttack(AActor *t1, DAngle angle, double distance,
 }
 
 AActor *P_LineAttack(AActor *t1, DAngle angle, double distance,
-	DAngle pitch, int damage, FName damageType, FName pufftype, int flags, FTranslatedLineTarget *victim, int *actualdamage)
+	DAngle pitch, int damage, FName damageType, FName pufftype, int flags, FTranslatedLineTarget *victim, int *actualdamage, double sz)
 {
 	PClassActor *type = PClass::FindActor(pufftype);
 	if (type == NULL)
@@ -4701,7 +4716,7 @@ AActor *P_LineAttack(AActor *t1, DAngle angle, double distance,
 	}
 	else
 	{
-		return P_LineAttack(t1, angle, distance, pitch, damage, damageType, type, flags, victim, actualdamage);
+		return P_LineAttack(t1, angle, distance, pitch, damage, damageType, type, flags, victim, actualdamage, sz);
 	}
 }
 
@@ -4716,10 +4731,11 @@ DEFINE_ACTION_FUNCTION(AActor, LineAttack)
 	PARAM_CLASS(puffType, AActor);
 	PARAM_INT_DEF(flags);
 	PARAM_POINTER_DEF(victim, FTranslatedLineTarget);
+	PARAM_FLOAT_DEF(offsetz);
 
 	int acdmg;
 	if (puffType == nullptr) puffType = PClass::FindActor("BulletPuff");	// P_LineAttack does not work without a puff to take info from.
-	auto puff = P_LineAttack(self, angle, distance, pitch, damage, damageType, puffType, flags, victim, &acdmg);
+	auto puff = P_LineAttack(self, angle, distance, pitch, damage, damageType, puffType, flags, victim, &acdmg, offsetz);
 	if (numret > 0) ret[0].SetObject(puff);
 	if (numret > 1) ret[1].SetInt(acdmg), numret = 2;
 	return numret;
@@ -5873,7 +5889,10 @@ bool P_AdjustFloorCeil(AActor *thing, FChangePosition *cpos)
 	}
 
 	bool isgood = P_CheckPosition(thing, thing->Pos(), tm);
-	if (!(thing->flags4 & MF4_ACTLIKEBRIDGE))
+
+	// This is essentially utterly broken because it even uses the return from a failed P_CheckPosition but the entire logic will break down if that isn't done.
+	// However, if tm.floorz is greater than tm.ceilingz we have a real problem that needs to be dealt with exolicitly.
+	if (!(thing->flags4 & MF4_ACTLIKEBRIDGE) && tm.floorz <= tm.ceilingz)
 	{
 		thing->floorz = tm.floorz;
 		thing->ceilingz = tm.ceilingz;
@@ -6685,7 +6704,8 @@ bool P_ActivateThingSpecial(AActor * thing, AActor * trigger, bool death)
 			false, thing->args[0], thing->args[1], thing->args[2], thing->args[3], thing->args[4]);
 
 		// Clears the special if it was run on thing's death or if flag is set.
-		if (death || (thing->activationtype & THINGSPEC_ClearSpecial && res)) thing->special = 0;
+		// Note that Hexen originally did not clear the special which some original maps depend on (e.g. the bell in HEXDD.)
+		if ((death && !(level.flags2 & LEVEL2_HEXENHACK)) || (thing->activationtype & THINGSPEC_ClearSpecial && res)) thing->special = 0;
 	}
 
 	// Returns the result

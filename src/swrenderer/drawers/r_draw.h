@@ -17,6 +17,7 @@ EXTERN_CVAR(Int, r_drawfuzz);
 EXTERN_CVAR(Bool, r_drawtrans);
 EXTERN_CVAR(Float, transsouls);
 EXTERN_CVAR(Bool, r_dynlights);
+EXTERN_CVAR(Bool, r_fuzzscale);
 
 class DrawerCommandQueue;
 typedef std::shared_ptr<DrawerCommandQueue> DrawerCommandQueuePtr;
@@ -28,6 +29,7 @@ namespace swrenderer
 	class WallDrawerArgs;
 	class SpanDrawerArgs;
 	class SpriteDrawerArgs;
+	class VoxelBlock;
 
 	extern uint8_t shadetables[/*NUMCOLORMAPS*16*256*/];
 	extern FDynamicColormap ShadeFakeColormap[16];
@@ -40,7 +42,9 @@ namespace swrenderer
 
 	// Spectre/Invisibility.
 	#define FUZZTABLE 50
+	#define FUZZ_RANDOM_X_SIZE 100
 	extern int fuzzoffset[FUZZTABLE + 1];
+	extern int fuzz_random_x_offset[FUZZ_RANDOM_X_SIZE];
 	extern int fuzzpos;
 	extern int fuzzviewheight;
 
@@ -79,6 +83,7 @@ namespace swrenderer
 		virtual void DrawSubClampTranslatedColumn(const SpriteDrawerArgs &args) = 0;
 		virtual void DrawRevSubClampColumn(const SpriteDrawerArgs &args) = 0;
 		virtual void DrawRevSubClampTranslatedColumn(const SpriteDrawerArgs &args) = 0;
+		virtual void DrawVoxelBlocks(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount) = 0;
 		virtual void DrawSpan(const SpanDrawerArgs &args) = 0;
 		virtual void DrawSpanMasked(const SpanDrawerArgs &args) = 0;
 		virtual void DrawSpanTranslucent(const SpanDrawerArgs &args) = 0;
@@ -97,5 +102,6 @@ namespace swrenderer
 	void R_InitFuzzTable(int fuzzoff);
 	void R_InitParticleTexture();
 
+	void R_UpdateFuzzPosFrameStart();
 	void R_UpdateFuzzPos(const SpriteDrawerArgs &args);
 }

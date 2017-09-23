@@ -811,10 +811,9 @@ int FTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotate, FCopyI
 	return 0;
 }
 
-int FTexture::CopyTrueColorTranslated(FBitmap *bmp, int x, int y, int rotate, FRemapTable *remap, FCopyInfo *inf)
+int FTexture::CopyTrueColorTranslated(FBitmap *bmp, int x, int y, int rotate, PalEntry *remap, FCopyInfo *inf)
 {
-	PalEntry *palette = remap->Palette;
-	bmp->CopyPixelData(x, y, GetPixels(), Width, Height, Height, 1, rotate, palette, inf);
+	bmp->CopyPixelData(x, y, GetPixels(), Width, Height, Height, 1, rotate, remap, inf);
 	return 0;
 }
 
@@ -848,40 +847,37 @@ void FTexture::SetScaledSize(int fitwidth, int fitheight)
 //
 //===========================================================================
 
-namespace
+PalEntry FTexture::averageColor(const uint32_t *data, int size, int maxout)
 {
-	PalEntry averageColor(const uint32_t *data, int size, int maxout)
+	int				i;
+	unsigned int	r, g, b;
+
+	// First clear them.
+	r = g = b = 0;
+	if (size == 0)
 	{
-		int				i;
-		unsigned int	r, g, b;
-
-		// First clear them.
-		r = g = b = 0;
-		if (size == 0)
-		{
-			return PalEntry(255, 255, 255);
-		}
-		for (i = 0; i < size; i++)
-		{
-			b += BPART(data[i]);
-			g += GPART(data[i]);
-			r += RPART(data[i]);
-		}
-
-		r = r / size;
-		g = g / size;
-		b = b / size;
-
-		int maxv = MAX(MAX(r, g), b);
-
-		if (maxv && maxout)
-		{
-			r = Scale(r, maxout, maxv);
-			g = Scale(g, maxout, maxv);
-			b = Scale(b, maxout, maxv);
-		}
-		return PalEntry(255, r, g, b);
+		return PalEntry(255, 255, 255);
 	}
+	for (i = 0; i < size; i++)
+	{
+		b += BPART(data[i]);
+		g += GPART(data[i]);
+		r += RPART(data[i]);
+	}
+
+	r = r / size;
+	g = g / size;
+	b = b / size;
+
+	int maxv = MAX(MAX(r, g), b);
+
+	if (maxv && maxout)
+	{
+		r = ::Scale(r, maxout, maxv);
+		g = ::Scale(g, maxout, maxv);
+		b = ::Scale(b, maxout, maxv);
+	}
+	return PalEntry(255, r, g, b);
 }
 
 PalEntry FTexture::GetSkyCapColor(bool bottom)

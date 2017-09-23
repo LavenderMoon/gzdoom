@@ -167,50 +167,6 @@ void gl_GenerateGlobalBrightmapFromColormap()
 	}
 }
 
-//===========================================================================
-//
-// averageColor
-//  input is RGBA8 pixel format.
-//	The resulting RGB color can be scaled uniformly so that the highest 
-//	component becomes one.
-//
-//===========================================================================
-static PalEntry averageColor(const uint32_t *data, int size, int maxout)
-{
-	int				i;
-	unsigned int	r, g, b;
-
-
-
-	// First clear them.
-	r = g = b = 0;
-	if (size==0) 
-	{
-		return PalEntry(255,255,255);
-	}
-	for(i = 0; i < size; i++)
-	{
-		r += BPART(data[i]);
-		g += GPART(data[i]);
-		b += RPART(data[i]);
-	}
-
-	r = r/size;
-	g = g/size;
-	b = b/size;
-
-	int maxv=MAX(MAX(r,g),b);
-
-	if(maxv && maxout)
-	{
-		r = Scale(r, maxout, maxv);
-		g = Scale(g, maxout, maxv);
-		b = Scale(b, maxout, maxv);
-	}
-	return PalEntry(255,r,g,b);
-}
-
-
 
 //==========================================================================
 //
@@ -582,7 +538,7 @@ void FBrightmapTexture::Unload ()
 
 int FBrightmapTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotate, FCopyInfo *inf)
 {
-	SourcePic->CopyTrueColorTranslated(bmp, x, y, rotate, &GlobalBrightmap);
+	SourcePic->CopyTrueColorTranslated(bmp, x, y, rotate, GlobalBrightmap.Palette);
 	return 0;
 }
 
@@ -658,7 +614,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 
 		if (lumpnum != -1)
 		{
-			if (iwad && Wads.GetLumpFile(lumpnum) <= FWadCollection::IWAD_FILENUM) useme = true;
+			if (iwad && Wads.GetLumpFile(lumpnum) <= Wads.GetIwadNum()) useme = true;
 			if (thiswad && Wads.GetLumpFile(lumpnum) == deflump) useme = true;
 		}
 		if (!useme) return;

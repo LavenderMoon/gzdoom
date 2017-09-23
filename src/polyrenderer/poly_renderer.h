@@ -33,6 +33,7 @@
 #include "scene/poly_sky.h"
 #include "scene/poly_light.h"
 #include "swrenderer/r_memory.h"
+#include "poly_renderthread.h"
 
 class AActor;
 class DCanvas;
@@ -52,13 +53,9 @@ public:
 	
 	uint32_t GetNextStencilValue() { uint32_t value = NextStencilValue; NextStencilValue += 2; return value; }
 
-	bool InsertSeenLinePortal(FLinePortal *portal);
-	bool InsertSeenMirror(line_t *mirrorLine);
-
 	bool DontMapLines = false;
 	
-	RenderMemory FrameMemory;
-	DrawerCommandQueuePtr DrawQueue;
+	PolyRenderThreads Threads;
 	DCanvas *RenderTarget = nullptr;
 	FViewWindow Viewwindow;
 	FRenderViewpoint Viewpoint;
@@ -75,7 +72,4 @@ private:
 	PolySkyDome Skydome;
 	RenderPolyPlayerSprites PlayerSprites;
 	uint32_t NextStencilValue = 0;
-
-	std::set<FLinePortal *> SeenLinePortals;
-	std::set<line_t *> SeenMirrors;
 };

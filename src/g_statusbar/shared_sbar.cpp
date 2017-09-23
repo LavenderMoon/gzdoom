@@ -303,6 +303,15 @@ void ST_CreateStatusBar(bool bTitleLevel)
 		{
 			StatusBar = CreateCustomStatusBar(SCRIPT_DEFAULT);
 		}
+		// SBARINFO failed so try the current statusbarclass again.
+		if (StatusBar == nullptr)
+		{
+			auto cls = PClass::FindClass(gameinfo.statusbarclass);
+			if (cls != nullptr)
+			{
+				StatusBar = (DBaseStatusBar *)cls->CreateNew();
+			}
+		}
 	}
 	if (StatusBar == nullptr)
 	{
@@ -1070,7 +1079,7 @@ bool DBaseStatusBar::MustDrawLog(EHudState state)
 {
 	IFVIRTUAL(DBaseStatusBar, MustDrawLog)
 	{
-		VMValue params[] = { (DObject*)this };
+		VMValue params[] = { (DObject*)this, int(state) };
 		int rv;
 		VMReturn ret(&rv);
 		VMCall(func, params, countof(params), &ret, 1);

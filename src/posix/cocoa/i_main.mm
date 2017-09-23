@@ -32,6 +32,7 @@
  */
 
 #include "i_common.h"
+#include "s_sound.h"
 
 #include <sys/sysctl.h>
 #include <unistd.h>
@@ -125,6 +126,7 @@ void popterm()
 void Mac_I_FatalError(const char* const message)
 {
 	I_SetMainWindowVisible(false);
+	S_StopMusic(true);
 
 	FConsoleWindow::GetInstance().ShowFatalError(message);
 }
@@ -154,6 +156,7 @@ static void I_DetectOS()
 		case 10: name = "OS X Yosemite";         break;
 		case 11: name = "OS X El Capitan";       break;
 		case 12: name = "macOS Sierra";          break;
+		case 13: name = "macOS High Sierra";     break;
 	}
 
 	char release[16] = "unknown";

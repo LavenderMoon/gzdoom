@@ -65,7 +65,6 @@
 EXTERN_CVAR (Float, snd_sfxvolume)
 CVAR (Int, snd_samplerate, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Int, snd_buffersize, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-CVAR (String, snd_output, "default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Int, snd_hrtf, -1, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 #if !defined(NO_OPENAL)
@@ -235,11 +234,6 @@ public:
 	FString GatherStats ()
 	{
 		return "Null sound module has no stats.";
-	}
-
-	virtual MIDIDevice* CreateMIDIDevice() const override
-	{
-		return nullptr;
 	}
 };
 

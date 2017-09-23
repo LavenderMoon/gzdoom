@@ -86,6 +86,22 @@ namespace swrenderer
 		FString DebugInfo() override;
 	};
 
+	class DrawScaledFuzzColumnRGBACommand : public DrawerCommand
+	{
+		int _x;
+		int _yl;
+		int _yh;
+		uint8_t * RESTRICT _destorg;
+		int _pitch;
+		int _fuzzpos;
+		int _fuzzviewheight;
+
+	public:
+		DrawScaledFuzzColumnRGBACommand(const SpriteDrawerArgs &drawerargs);
+		void Execute(DrawerThread *thread) override;
+		FString DebugInfo() override;
+	};
+
 	class FillSpanRGBACommand : public DrawerCommand
 	{
 		int _x1;
@@ -215,6 +231,21 @@ namespace swrenderer
 
 	/////////////////////////////////////////////////////////////////////////////
 
+	class DrawVoxelBlocksRGBACommand : public DrawerCommand
+	{
+	public:
+		DrawVoxelBlocksRGBACommand(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount);
+		void Execute(DrawerThread *thread) override;
+		FString DebugInfo() override;
+
+	private:
+		SpriteDrawerArgs args;
+		const VoxelBlock *blocks;
+		int blockcount;
+	};
+
+	/////////////////////////////////////////////////////////////////////////////
+
 	class SWTruecolorDrawers : public SWPixelFormatDrawers
 	{
 	public:
@@ -246,6 +277,7 @@ namespace swrenderer
 		void DrawSubClampTranslatedColumn(const SpriteDrawerArgs &args) override;
 		void DrawRevSubClampColumn(const SpriteDrawerArgs &args) override;
 		void DrawRevSubClampTranslatedColumn(const SpriteDrawerArgs &args) override;
+		void DrawVoxelBlocks(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount) override;
 		void DrawSpan(const SpanDrawerArgs &args) override;
 		void DrawSpanMasked(const SpanDrawerArgs &args) override;
 		void DrawSpanTranslucent(const SpanDrawerArgs &args) override;
@@ -270,7 +302,7 @@ namespace swrenderer
 	{
 	public:
 		// calculates the light constant passed to the shade_pal_index function
-		FORCEINLINE static uint32_t calc_light_multiplier(dsfixed_t light)
+		FORCEINLINE static uint32_t calc_light_multiplier(uint32_t light)
 		{
 			return 256 - (light >> (FRACBITS - 8));
 		}

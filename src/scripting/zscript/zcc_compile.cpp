@@ -1298,6 +1298,11 @@ bool ZCCCompiler::CompileFields(PContainerType *type, TArray<ZCC_VarDeclarator *
 		auto name = field->Names;
 		do
 		{
+			if (fieldtype->Size == 0 && !(varflags & VARF_Native))	// Size not known yet.
+			{
+				return false;
+			}
+
 			if (AddTreeNode(name->Name, name, TreeNodes, !forstruct))
 			{
 				auto thisfieldtype = fieldtype;
@@ -2555,7 +2560,6 @@ void ZCCCompiler::CompileFunction(ZCC_StructWork *c, ZCC_FuncDeclarator *f, bool
 							else
 							{
 								auto cnst = static_cast<FxConstant *>(x);
-								hasdefault = true;
 								switch (type->GetRegType())
 								{
 								case REGT_INT:
@@ -2583,6 +2587,8 @@ void ZCCCompiler::CompileFunction(ZCC_StructWork *c, ZCC_FuncDeclarator *f, bool
 									break;
 								}
 							}
+
+							hasdefault = true;
 						}
 						if (x != nullptr) delete x;
 					}

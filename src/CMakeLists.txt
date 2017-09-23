@@ -60,7 +60,6 @@ if( WIN32 )
 		( MSVC15 AND NOT CMAKE_GENERATOR_TOOLSET STREQUAL "v141_xp" ) )		# For VS 2017.
 		# for modern Windows SDKs the DirectX headers should be available by default.
 		set( DX_dinput8_LIBRARY dinput8 )
-		set( DX_dxguid_LIBRARY dxguid )
 	else()
 		
 		find_path( D3D_INCLUDE_DIR d3d9.h
@@ -97,9 +96,6 @@ if( WIN32 )
 		find_library( DX_dinput8_LIBRARY dinput8
 			PATHS ENV DXSDK_DIR
 			PATH_SUFFIXES Lib Lib/${XBITS} )
-		find_library( DX_dxguid_LIBRARY dxguid
-			PATHS ENV DXSDK_DIR
-			PATH_SUFFIXES Lib Lib/${XBITS} )
 
 		# Modern versions of the Windows SDK include dinput8.lib. Unfortunately,
 		# CMake cannot find these libraries via find_library.
@@ -108,11 +104,6 @@ if( WIN32 )
 			set( DX_dinput8_LIBRARY dinput8 )
 		endif()
 
-		# Modern versions of the Windows SDK do NOT include dxguid.lib. Its contents
-		# were moved to dinput8.lib.
-		if( NOT DX_dxguid_LIBRARY )
-			message( STATUS "Could not find dxguid.lib. Build may fail on old Windows SDKs.")
-		endif()
 	endif()
 
 	set( ZDOOM_LIBS
@@ -133,9 +124,6 @@ if( WIN32 )
 		set( ZDOOM_LIBS ${ZDOOM_LIBS} DelayImp )
 	endif()
 
-	if( DX_dxguid_LIBRARY )
-		list( APPEND ZDOOM_LIBS "${DX_dxguid_LIBRARY}" )
-	endif()
 else()
 	if( APPLE )
 		set( NO_GTK ON )
@@ -277,6 +265,16 @@ else( X64 )
 	set( CMAKE_CXX_FLAGS ${SAFE_CMAKE_CXX_FLAGS} )
 endif( X64 )
 
+CHECK_CXX_SOURCE_COMPILES("#include <ppl.h>
+	int main() { concurrency::parallel_for(0, 1, 1, [](int) { } ); }"
+	HAVE_PARALLEL_FOR)
+
+if( NOT HAVE_PARALLEL_FOR )
+	CHECK_CXX_SOURCE_COMPILES("#include <dispatch/dispatch.h>
+		int main() { dispatch_apply(1, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(size_t) { }); }"
+		HAVE_DISPATCH_APPLY)
+endif()
+
 # Set up flags for MSVC
 if (MSVC)
 	set( CMAKE_CXX_FLAGS "/MP ${CMAKE_CXX_FLAGS}" )
@@ -344,7 +342,7 @@ if( ZD_CMAKE_COMPILER_IS_GNUCXX_COMPATIBLE )
 	if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
 		set (USE_ARMV8 0 CACHE BOOL "Use ARMv8 instructions - Raspberry Pi 3")
 		if (USE_ARMV8)
-			set( CMAKE_CXX_FLAGS "-mcpu=cortex-a53  -mfpu=neon-fp-armv8 -mtune=cortex-a53 -funsafe-math-optimizations -mhard-float -DNO_SSE ${CMAKE_CXX_FLAGS}" )
+			set( CMAKE_CXX_FLAGS "-mcpu=cortex-a53  -mfpu=neon-fp-armv8 -mtune=cortex-a53 -mhard-float -DNO_SSE ${CMAKE_CXX_FLAGS}" )
 		else ()
 			set( CMAKE_CXX_FLAGS "-mfpu=neon -DNO_SSE ${CMAKE_CXX_FLAGS}" )
 		endif ()
@@ -517,7 +515,6 @@ set( PLAT_UNIX_SOURCES
 	posix/unix/i_specialpaths.cpp
 	posix/unix/iwadpicker_gtk.cpp )
 set( PLAT_OSX_SOURCES
-	sound/mididevices/music_audiotoolbox_mididevice.cpp
 	posix/osx/iwadpicker_cocoa.mm
 	posix/osx/i_specialpaths.mm
 	posix/osx/zdoom.icns )
@@ -579,6 +576,23 @@ if( HAVE_MMX )
 			PROPERTIES COMPILE_FLAGS "-mmmx" )
 	endif( ZD_CMAKE_COMPILER_IS_GNUCXX_COMPATIBLE )
 endif( HAVE_MMX )
+
+if( HAVE_PARALLEL_FOR )
+	add_definitions( -DHAVE_PARALLEL_FOR=1 )
+elseif( HAVE_DISPATCH_APPLY )
+	add_definitions( -DHAVE_DISPATCH_APPLY=1 )
+else()
+	option( NO_OPENMP "Disable usage of OpenMP" OFF )
+
+	if( NOT NO_OPENMP )
+		include( FindOpenMP )
+
+		if( OPENMP_FOUND )
+			set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}" )
+			set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}" )
+		endif( OPENMP_FOUND )
+	endif( NOT NO_OPENMP )
+endif()
 
 add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/xlat_parser.c ${CMAKE_CURRENT_BINARY_DIR}/xlat_parser.h
 	COMMAND lemon -C${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/xlat/xlat_parser.y
@@ -704,6 +718,7 @@ set ( SWRENDER_SOURCES
 	swrenderer/viewport/r_viewport.cpp
 	swrenderer/viewport/r_walldrawer.cpp
 	swrenderer/line/r_line.cpp
+	swrenderer/line/r_farclip_line.cpp
 	swrenderer/line/r_walldraw.cpp
 	swrenderer/line/r_wallsetup.cpp
 	swrenderer/line/r_fogboundary.cpp
@@ -729,6 +744,7 @@ set ( SWRENDER_SOURCES
 
 set( POLYRENDER_SOURCES
 	polyrenderer/poly_renderer.cpp
+	polyrenderer/poly_renderthread.cpp
 	polyrenderer/scene/poly_scene.cpp
 	polyrenderer/scene/poly_portal.cpp
 	polyrenderer/scene/poly_cull.cpp
@@ -929,6 +945,7 @@ set (PCH_SOURCES
 	portal.cpp
 	r_utility.cpp
 	r_sky.cpp
+	r_videoscale.cpp
 	s_advsound.cpp
 	s_environment.cpp
 	s_playlist.cpp
@@ -992,6 +1009,7 @@ set (PCH_SOURCES
 	gl/shaders/gl_shader.cpp
 	gl/shaders/gl_texshader.cpp
 	gl/shaders/gl_shaderprogram.cpp
+	gl/shaders/gl_postprocessshader.cpp
 	gl/shaders/gl_shadowmapshader.cpp
 	gl/shaders/gl_presentshader.cpp
 	gl/shaders/gl_present3dRowshader.cpp
@@ -1021,7 +1039,6 @@ set (PCH_SOURCES
 	gl/textures/gl_texture.cpp
 	gl/textures/gl_material.cpp
 	gl/textures/gl_hirestex.cpp
-	gl/textures/gl_bitmap.cpp
 	gl/textures/gl_samplers.cpp
 	gl/textures/gl_translate.cpp
 	gl/textures/gl_hqresize.cpp
@@ -1084,6 +1101,7 @@ set (PCH_SOURCES
 	r_data/voxels.cpp
 	r_data/renderstyle.cpp
 	r_data/r_interpolate.cpp
+	r_data/r_vanillatrans.cpp
 	scripting/symbols.cpp
 	scripting/types.cpp
 	scripting/thingdef.cpp
@@ -1254,30 +1272,36 @@ if( MSVC )
 	create_default_target_launcher( zdoom WORKING_DIRECTORY ${ZDOOM_OUTPUT_DIR} )
 endif()
 
-if( NOT WIN32 )
+if( NOT WIN32 AND NOT APPLE )
 	FILE( WRITE ${CMAKE_CURRENT_BINARY_DIR}/link-make "if [ ! -e ${ZDOOM_OUTPUT_DIR}/${ZDOOM_EXE_NAME} ]; then ln -sf ${CMAKE_CURRENT_BINARY_DIR}/${ZDOOM_EXE_NAME} ${ZDOOM_OUTPUT_DIR}/${ZDOOM_EXE_NAME}; fi" )
 	add_custom_command( TARGET zdoom POST_BUILD
 		COMMAND chmod +x ${CMAKE_CURRENT_BINARY_DIR}/link-make
 		COMMAND /bin/sh -c ${CMAKE_CURRENT_BINARY_DIR}/link-make )
 endif()
+
+add_custom_command(TARGET zdoom POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+	${CMAKE_SOURCE_DIR}/soundfont/gzdoom.sf2 $<TARGET_FILE_DIR:zdoom>)
+
 if( CMAKE_COMPILER_IS_GNUCXX )
 	# GCC misoptimizes this file
 	set_source_files_properties( oplsynth/fmopl.cpp PROPERTIES COMPILE_FLAGS "-fno-tree-dominator-opts -fno-tree-fre" )
 endif()
 if( ZD_CMAKE_COMPILER_IS_GNUCXX_COMPATIBLE )
-	# Need to enable intrinsics for this file.
+	# Need to enable intrinsics for these files.
 	if( SSE_MATTERS )
 		set_source_files_properties(
-			x86.cpp
-			swrenderer/r_all.cpp
+			gl/system/gl_swframebuffer.cpp
 			polyrenderer/poly_all.cpp
+			swrenderer/r_all.cpp
+			x86.cpp
 			PROPERTIES COMPILE_FLAGS "-msse2 -mmmx" )
 	endif()
 endif()
 
 if( APPLE )
 	set_target_properties(zdoom PROPERTIES
-		LINK_FLAGS "-framework AudioToolbox -framework AudioUnit -framework Carbon -framework Cocoa -framework IOKit -framework OpenGL"
+		LINK_FLAGS "-framework Carbon -framework Cocoa -framework IOKit -framework OpenGL"
 		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/posix/osx/zdoom-info.plist" )
 
 endif()

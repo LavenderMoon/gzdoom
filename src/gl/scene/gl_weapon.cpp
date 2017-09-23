@@ -98,7 +98,7 @@ void GLSceneDrawer::DrawPSprite (player_t * player,DPSprite *psp, float sx, floa
 	// calculate edges of the shape
 	scalex = (320.0f / (240.0f * r_viewwindow.WidescreenRatio)) * vw / 320;
 
-	tx = sx - (160 - r.left);
+	tx = (psp->Flags & PSPF_MIRROR) ? ((160 - r.width) - (sx + r.left)) : (sx - (160 - r.left));
 	x1 = tx * scalex + vw/2;
 	if (x1 > vw)	return; // off the right side
 	x1 += viewwindowx;
@@ -107,7 +107,6 @@ void GLSceneDrawer::DrawPSprite (player_t * player,DPSprite *psp, float sx, floa
 	x2 = tx * scalex + vw / 2;
 	if (x2 < 0) return; // off the left side
 	x2 += viewwindowx;
-
 
 	// killough 12/98: fix psprite positioning problem
 	ftexturemid = 100.f - sy - r.top;
@@ -130,7 +129,8 @@ void GLSceneDrawer::DrawPSprite (player_t * player,DPSprite *psp, float sx, floa
 	y1 = viewwindowy + vh / 2 - (ftexturemid * scale);
 	y2 = y1 + (r.height * scale) + 1;
 
-	if (!(mirror) != !(psp->Flags & PSPF_FLIP))
+
+	if (!(mirror) != !(psp->Flags & (PSPF_FLIP)))
 	{
 		fU2 = tex->GetSpriteUL();
 		fV1 = tex->GetSpriteVT();
@@ -244,7 +244,7 @@ void GLSceneDrawer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 	}
 	else
 	{
-		fakesec    = gl_FakeFlat(viewsector, &fs, in_area, false);
+		fakesec = gl_FakeFlat(viewsector, &fs, in_area, false);
 
 		// calculate light level for weapon sprites
 		lightlevel = gl_ClampLight(fakesec->lightlevel);
@@ -282,7 +282,7 @@ void GLSceneDrawer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 
 		lightlevel = gl_CalcLightLevel(lightlevel, getExtraLight(), true);
 
-		if (glset.lightmode == 8)
+		if (glset.lightmode == 8 || lightlevel < 92)
 		{
 			// Korshun: the way based on max possible light level for sector like in software renderer.
 			float min_L = 36.0 / 31.0 - ((lightlevel / 255.0) * (63.0 / 31.0)); // Lightlevel in range 0-63
@@ -338,6 +338,7 @@ void GLSceneDrawer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		{
 			RenderStyle = rs.first;
 		}
+		if (RenderStyle.BlendOp == STYLEOP_None) continue;
 
 		if (vis.Invert)
 		{
@@ -419,7 +420,11 @@ void GLSceneDrawer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			{
 				if (gl_lights && GLRenderer->mLightCount && FixedColormap == CM_DEFAULT && gl_light_sprites)
 				{
-					gl_SetDynSpriteLight(playermo, NULL);
+					FSpriteModelFrame *smf = playermo->player->ReadyWeapon ? gl_FindModelFrame(playermo->player->ReadyWeapon->GetClass(), psp->GetState()->sprite, psp->GetState()->GetFrame(), false) : nullptr;
+					if (smf)
+						gl_SetDynModelLight(playermo, true);
+					else
+						gl_SetDynSpriteLight(playermo, NULL);
 				}
 				SetColor(ll, 0, cmc, trans, true);
 			}
@@ -436,7 +441,7 @@ void GLSceneDrawer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 
 			if (psp->Flags & PSPF_ADDBOB)
 			{
-				sx += bobx;
+				sx += (psp->Flags & PSPF_MIRROR) ? -bobx : bobx;
 				sy += boby;
 			}
 

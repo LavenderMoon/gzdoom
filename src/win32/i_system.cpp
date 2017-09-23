@@ -168,7 +168,6 @@ int (*I_GetTime) (bool saveMS);
 int (*I_WaitForTic) (int);
 void (*I_FreezeTime) (bool frozen);
 
-os_t OSPlatform;
 bool gameisdead;
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
@@ -485,10 +484,22 @@ static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw
 // saved tic.
 //
 //==========================================================================
+static uint32_t FrameTime;
+
+void I_SetFrameTime()
+{
+	FrameTime = timeGetTime();
+}
 
 double I_GetTimeFrac(uint32_t *ms)
 {
-	DWORD now = timeGetTime();
+	//DWORD now = MAX<uint32_t>(FrameTime, TicStart);
+	DWORD now = FrameTime;
+	if (FrameTime < TicStart)
+	{
+		// Preliminary kept in to see if this can happen. Should be removed once confirmed ok.
+		Printf("Timer underflow!\n");
+	}
 	if (ms != NULL)
 	{
 		*ms = TicNext;
@@ -542,24 +553,7 @@ void I_DetectOS(void)
 
 	switch (info.dwPlatformId)
 	{
-	case VER_PLATFORM_WIN32_WINDOWS:
-		OSPlatform = os_Win95;
-		if (info.dwMinorVersion < 10)
-		{
-			osname = "95";
-		}
-		else if (info.dwMinorVersion < 90)
-		{
-			osname = "98";
-		}
-		else
-		{
-			osname = "Me";
-		}
-		break;
-
 	case VER_PLATFORM_WIN32_NT:
-		OSPlatform = info.dwMajorVersion < 5 ? os_WinNT4 : os_Win2k;
 		osname = "NT";
 		if (info.dwMajorVersion == 5)
 		{
@@ -605,31 +599,14 @@ void I_DetectOS(void)
 		break;
 
 	default:
-		OSPlatform = os_unknown;
 		osname = "Unknown OS";
 		break;
 	}
 
-	if (OSPlatform == os_Win95)
-	{
-		if (!batchrun) Printf ("OS: Windows %s %lu.%lu.%lu %s\n",
-				osname,
-				info.dwMajorVersion, info.dwMinorVersion,
-				info.dwBuildNumber & 0xffff, info.szCSDVersion);
-	}
-	else
-	{
-		if (!batchrun) Printf ("OS: Windows %s (NT %lu.%lu) Build %lu\n    %s\n",
-				osname,
-				info.dwMajorVersion, info.dwMinorVersion,
-				info.dwBuildNumber, info.szCSDVersion);
-	}
-
-	if (OSPlatform == os_unknown)
-	{
-		if (!batchrun) Printf ("(Assuming Windows 2000)\n");
-		OSPlatform = os_Win2k;
-	}
+	if (!batchrun) Printf ("OS: Windows %s (NT %lu.%lu) Build %lu\n    %s\n",
+			osname,
+			info.dwMajorVersion, info.dwMinorVersion,
+			info.dwBuildNumber, info.szCSDVersion);
 }
 
 //==========================================================================
@@ -1676,6 +1653,13 @@ TArray<FString> I_GetGogPaths()
 		// in subdirectories
 		result.Push(path + "/TNT");
 		result.Push(path + "/Plutonia");
+	}
+
+	// Look for Doom 3: BFG Edition
+	gamepath = gogregistrypath + "\\1135892318";
+	if (QueryPathKey(HKEY_LOCAL_MACHINE, gamepath.GetChars(), "Path", path))
+	{
+		result.Push(path + "/base/wads");	// in a subdirectory
 	}
 
 	// Look for Strife: Veteran Edition

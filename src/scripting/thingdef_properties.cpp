@@ -656,6 +656,15 @@ DEFINE_PROPERTY(floatbobphase, I, Actor)
 //==========================================================================
 //
 //==========================================================================
+DEFINE_PROPERTY(floatbobstrength, F, Actor)
+{
+	PROP_DOUBLE_PARM(id, 0);
+	defaults->FloatBobStrength = id;
+}
+
+//==========================================================================
+//
+//==========================================================================
 DEFINE_PROPERTY(args, Iiiii, Actor)
 {
 	for (int i = 0; i < PROP_PARM_COUNT; i++)
@@ -989,6 +998,7 @@ DEFINE_PROPERTY(clearflags, 0, Actor)
 	defaults->flags5 = 0;
 	defaults->flags6 = 0;
 	defaults->flags7 = 0;
+	defaults->flags8 = 0;
 }
 
 //==========================================================================
@@ -1079,6 +1089,7 @@ DEFINE_PROPERTY(distancecheck, S, Actor)
 		I_Error("CVar %s must of type Int", cvar);
 	}
 }
+
 
 //==========================================================================
 //
@@ -1825,5 +1836,4 @@ DEFINE_SCRIPTED_PROPERTY(unmorphflash, S, PowerMorph)
 	PROP_STRING_PARM(str, 0);
 	defaults->PointerVar<PClassActor>(NAME_UnMorphFlash) = FindClassTentative(str, RUNTIME_CLASS(AActor), bag.fromDecorate);
 }
-
 

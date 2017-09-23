@@ -322,7 +322,8 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(MF7, FORCEZERORADIUSDMG, AActor, flags7),
 	DEFINE_FLAG(MF7, NOINFIGHTSPECIES, AActor, flags7),
 	DEFINE_FLAG(MF7, FORCEINFIGHTING, AActor, flags7),
-	DEFINE_FLAG(MF7, SPRITEFLIP, AActor, flags7),
+
+	DEFINE_FLAG(MF8, FRIGHTENING, AActor, flags8),
 
 	// Effect flags
 	DEFINE_FLAG(FX, VISIBILITYPULSE, AActor, effects),
@@ -344,6 +345,8 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(RF, YFLIP, AActor, renderflags),
 	DEFINE_FLAG(RF, INTERPOLATEANGLES, AActor, renderflags),
 	DEFINE_FLAG(RF, DONTINTERPOLATE, AActor, renderflags),
+	DEFINE_FLAG(RF, SPRITEFLIP, AActor, renderflags),
+	DEFINE_FLAG(RF, ZDOOMTRANS, AActor, renderflags),
 
 	// Bounce flags
 	DEFINE_FLAG2(BOUNCE_Walls, BOUNCEONWALLS, AActor, BounceFlags),
@@ -485,12 +488,12 @@ static FFlagDef PlayerPawnFlagDefs[] =
 static FFlagDef DynLightFlagDefs[] =
 {
 	// PlayerPawn flags
-	DEFINE_FLAG(MF4, SUBTRACTIVE, ADynamicLight, flags4),
-	DEFINE_FLAG(MF4, ADDITIVE, ADynamicLight, flags4),
-	DEFINE_FLAG(MF4, DONTLIGHTSELF, ADynamicLight, flags4),
-	DEFINE_FLAG(MF4, ATTENUATE, ADynamicLight, flags4),
-	DEFINE_FLAG(MF4, NOSHADOWMAP, ADynamicLight, flags4),
-	DEFINE_FLAG(MF4, DONTLIGHTACTORS, ADynamicLight, flags4),
+	DEFINE_FLAG(LF, SUBTRACTIVE, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, ADDITIVE, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, DONTLIGHTSELF, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, ATTENUATE, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, NOSHADOWMAP, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, DONTLIGHTACTORS, ADynamicLight, lightflags),
 };
 
 static FFlagDef PowerSpeedFlagDefs[] =
@@ -1249,3 +1252,44 @@ DEFINE_ACTION_FUNCTION(FStringStruct, Filter)
 	ACTION_RETURN_STRING(strbin1(*self));
 }
 
+DEFINE_ACTION_FUNCTION(FStringStruct, IndexOf)
+{
+	PARAM_SELF_STRUCT_PROLOGUE(FString);
+	PARAM_STRING(substr);
+	PARAM_INT_DEF(startIndex);
+	ACTION_RETURN_INT(self->IndexOf(substr, startIndex));
+}
+
+DEFINE_ACTION_FUNCTION(FStringStruct, LastIndexOf)
+{
+	PARAM_SELF_STRUCT_PROLOGUE(FString);
+	PARAM_STRING(substr);
+	ACTION_RETURN_INT(self->LastIndexOf(substr));
+}
+
+DEFINE_ACTION_FUNCTION(FStringStruct, ToUpper)
+{
+	PARAM_SELF_STRUCT_PROLOGUE(FString);
+	self->ToUpper();
+	return 0;
+}
+
+DEFINE_ACTION_FUNCTION(FStringStruct, ToLower)
+{
+	PARAM_SELF_STRUCT_PROLOGUE(FString);
+	self->ToLower();
+	return 0;
+}
+
+DEFINE_ACTION_FUNCTION(FStringStruct, ToInt)
+{
+	PARAM_SELF_STRUCT_PROLOGUE(FString);
+	PARAM_INT_DEF(base);
+	ACTION_RETURN_INT(self->ToLong(base));
+}
+
+DEFINE_ACTION_FUNCTION(FStringStruct, ToDouble)
+{
+	PARAM_SELF_STRUCT_PROLOGUE(FString);
+	ACTION_RETURN_FLOAT(self->ToDouble());
+}

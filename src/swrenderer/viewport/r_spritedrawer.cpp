@@ -440,6 +440,7 @@ namespace swrenderer
 			drawer_needs_pal_input = true;
 			CameraLight *cameraLight = CameraLight::Instance();
 			dc_color = cameraLight->FixedColormap() ? cameraLight->FixedColormap()->Maps[APART(color)] : basecolormap->Maps[APART(color)];
+			dc_color_bgra = color;
 			basecolormap = &ShadeFakeColormap[16 - alpha];
 			if (cameraLight->FixedLightLevel() >= 0 && !cameraLight->FixedColormap())
 			{
@@ -465,6 +466,7 @@ namespace swrenderer
 			uint32_t b = BPART(color);
 			// dc_color is used by the rt_* routines. It is indexed into dc_srcblend.
 			dc_color = RGB256k.RGB[r >> 2][g >> 2][b >> 2];
+			dc_color_bgra = color;
 			if (style.Flags & STYLEF_InvertSource)
 			{
 				r = 255 - r;
@@ -492,8 +494,11 @@ namespace swrenderer
 		thread->Drawers(dc_viewport)->FillColumn(*this);
 	}
 
-	void SpriteDrawerArgs::DrawVoxelColumn(RenderThread *thread, fixed_t vPos, fixed_t vStep, const uint8_t *voxels, int voxelsCount)
+	void SpriteDrawerArgs::DrawVoxelBlocks(RenderThread *thread, const VoxelBlock *blocks, int blockcount)
 	{
+		SetDest(thread->Viewport.get(), 0, 0);
+		thread->Drawers(dc_viewport)->DrawVoxelBlocks(*this, blocks, blockcount);
+#if 0
 		if (dc_viewport->RenderTarget->IsBgra())
 		{
 			double v = vPos / (double)voxelsCount / FRACUNIT;
@@ -512,6 +517,7 @@ namespace swrenderer
 		dc_source2 = 0;
 		dc_textureheight = voxelsCount;
 		(thread->Drawers(dc_viewport)->*colfunc)(*this);
+#endif
 	}
 
 	void SpriteDrawerArgs::SetDest(RenderViewport *viewport, int x, int y)

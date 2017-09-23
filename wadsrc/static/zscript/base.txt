@@ -95,7 +95,7 @@ struct TexMan
 	native static Vector2 GetScaledOffset(TextureID tex);
 	native static int CheckRealHeight(TextureID tex);
 
-	native static void SetCameraToTexture(Actor viewpoint, String texture, int fov);
+	native static void SetCameraToTexture(Actor viewpoint, String texture, double fov);
 }
 
 enum DrawTextureTags
@@ -385,6 +385,9 @@ class Thinker : Object native play
 		STAT_MAPMARKER,							// Map marker actors
 		STAT_DLIGHT,							// Dynamic lights
 
+		STAT_USER = 70,
+		STAT_USER_MAX = 90,
+
 		STAT_DEFAULT = 100,						// Thinkers go here unless specified otherwise.
 		STAT_SECTOREFFECT,						// All sector effects that cause floor and ceiling movement
 		STAT_ACTORMOVER,						// actor movers
@@ -449,7 +452,7 @@ struct DropItem native
 	native readonly DropItem Next;
 	native readonly name Name;
 	native readonly int Probability;
-	native int Amount;
+	native readonly int Amount;
 }
 
 class SpotState : Object native
@@ -527,6 +530,7 @@ struct LevelLocals native
 	native int GetUDMFInt(int type, int index, Name key);
 	native double GetUDMFFloat(int type, int index, Name key);
 	native bool ExecuteSpecial(int special, Actor activator, line linedef, bool lineside, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0, int arg5 = 0);
+	native static void GiveSecret(Actor activator, bool printmsg = true, bool playsound = true);
 	native static void StartSlideshow(Name whichone = 'none');
 	native static void WorldDone();
 	native static void RemoveAllBots(bool fromlist);
@@ -656,6 +660,12 @@ struct StringStruct native
 	native String CharAt(int pos) const;
 	native int CharCodeAt(int pos) const;
 	native String Filter();
+	native int IndexOf(String substr, int startIndex = 0) const;
+	native int LastIndexOf(String substr) const;
+	native void ToUpper();
+	native void ToLower();
+	native int ToInt(int base = 0) const;
+	native double ToDouble() const;
 }
 
 class SectorEffect : Thinker native
@@ -775,3 +785,11 @@ class Lighting : SectorEffect native
 {
 }
 
+struct Shader native
+{
+	native clearscope static void SetEnabled(PlayerInfo player, string shaderName, bool enable);
+	native clearscope static void SetUniform1f(PlayerInfo player, string shaderName, string uniformName, float value);
+	native clearscope static void SetUniform2f(PlayerInfo player, string shaderName, string uniformName, vector2 value);
+	native clearscope static void SetUniform3f(PlayerInfo player, string shaderName, string uniformName, vector3 value);
+	native clearscope static void SetUniform1i(PlayerInfo player, string shaderName, string uniformName, int value);
+}

@@ -1,5 +1,5 @@
 /*
-**  Potential visible set (PVS) handling
+**  Polygon Doom software renderer
 **  Copyright (c) 2016 Magnus Norddahl
 **
 **  This software is provided 'as-is', without any express or implied
@@ -28,9 +28,37 @@
 #include "poly_cull.h"
 #include "polyrenderer/poly_renderer.h"
 
-void PolyCull::CullScene(const TriMatrix &worldToClip, const PolyClipPlane &portalClipPlane)
+void PolyCull::CullScene(const PolyClipPlane &portalClipPlane)
 {
+	ClearSolidSegments();
+	MarkViewFrustum();
+
+	if (level.LevelName != lastLevelName) // Is this the best way to detect a level change?
+	{
+		lastLevelName = level.LevelName;
+		SubsectorDepths.clear();
+		SubsectorDepths.resize(level.subsectors.Size(), 0xffffffff);
+		SectorSeen.clear();
+		SectorSeen.resize(level.sectors.Size());
+	}
+	else
+	{
+		for (const auto &sub : PvsSectors)
+			SubsectorDepths[sub->Index()] = 0xffffffff;
+		SubsectorDepths.resize(level.subsectors.Size(), 0xffffffff);
+
+		for (const auto &sector : SeenSectors)
+			SectorSeen[sector->Index()] = false;
+		SectorSeen.resize(level.sectors.Size());
+	}
+
 	PvsSectors.clear();
+	SeenSectors.clear();
+
+	NextPvsLineStart = 0;
+	PvsLineStart.clear();
+	PvsLineVisible.resize(level.segs.Size());
+
 	PortalClipPlane = portalClipPlane;
 
 	// Cull front to back
@@ -70,6 +98,20 @@ void PolyCull::CullNode(void *node)
 
 void PolyCull::CullSubsector(subsector_t *sub)
 {
+	// Check if subsector is clipped entirely by the portal clip plane
+	bool visible = false;
+	for (uint32_t i = 0; i < sub->numlines; i++)
+	{
+		seg_t *line = &sub->firstline[i];
+		if (PortalClipPlane.A * line->v1->fX() + PortalClipPlane.B * line->v1->fY() + PortalClipPlane.D > 0.0)
+		{
+			visible = true;
+			break;
+		}
+	}
+	if (!visible)
+		return;
+
 	// Update sky heights for the scene
 	if (!FirstSkyHeight)
 	{
@@ -83,28 +125,54 @@ void PolyCull::CullSubsector(subsector_t *sub)
 		FirstSkyHeight = false;
 	}
 
+	uint32_t subsectorDepth = (uint32_t)PvsSectors.size();
+
 	// Mark that we need to render this
 	PvsSectors.push_back(sub);
+	PvsLineStart.push_back(NextPvsLineStart);
+
+	DVector3 viewpos = PolyRenderer::Instance()->Viewpoint.Pos;
 
 	// Update culling info for further bsp clipping
 	for (uint32_t i = 0; i < sub->numlines; i++)
 	{
 		seg_t *line = &sub->firstline[i];
-		if ((line->sidedef == nullptr || !(line->sidedef->Flags & WALLF_POLYOBJ)) && line->backsector == nullptr)
-		{
-			// Skip lines not facing viewer
-			DVector2 pt1 = line->v1->fPos() - PolyRenderer::Instance()->Viewpoint.Pos;
-			DVector2 pt2 = line->v2->fPos() - PolyRenderer::Instance()->Viewpoint.Pos;
-			if (pt1.Y * (pt1.X - pt2.X) + pt1.X * (pt2.Y - pt1.Y) >= 0)
-				continue;
 
-			angle_t angle1, angle2;
-			if (GetAnglesForLine(line->v1->fX(), line->v1->fY(), line->v2->fX(), line->v2->fY(), angle1, angle2))
-			{
-				MarkSegmentCulled(angle1, angle2);
-			}
+		// Skip lines not facing viewer
+		DVector2 pt1 = line->v1->fPos() - viewpos;
+		DVector2 pt2 = line->v2->fPos() - viewpos;
+		if (pt1.Y * (pt1.X - pt2.X) + pt1.X * (pt2.Y - pt1.Y) >= 0)
+		{
+			PvsLineVisible[NextPvsLineStart++] = false;
+			continue;
 		}
+
+		// Skip line if entirely behind portal clipping plane
+		if ((PortalClipPlane.A * line->v1->fX() + PortalClipPlane.B * line->v1->fY() + PortalClipPlane.D <= 0.0) ||
+			(PortalClipPlane.A * line->v2->fX() + PortalClipPlane.B * line->v2->fY() + PortalClipPlane.D <= 0.0))
+		{
+			PvsLineVisible[NextPvsLineStart++] = false;
+			continue;
+		}
+
+		angle_t angle1, angle2;
+		bool lineVisible = GetAnglesForLine(line->v1->fX(), line->v1->fY(), line->v2->fX(), line->v2->fY(), angle1, angle2);
+		if (lineVisible && line->backsector == nullptr)
+		{
+			MarkSegmentCulled(angle1, angle2);
+		}
+
+		// Mark if this line was visible
+		PvsLineVisible[NextPvsLineStart++] = lineVisible;
 	}
+
+	if (!SectorSeen[sub->sector->Index()])
+	{
+		SectorSeen[sub->sector->Index()] = true;
+		SeenSectors.push_back(sub->sector);
+	}
+
+	SubsectorDepths[sub->Index()] = subsectorDepth;
 }
 
 void PolyCull::ClearSolidSegments()
@@ -119,11 +187,11 @@ void PolyCull::InvertSegments()
 	angle_t cur = 0;
 	for (const auto &segment : TempInvertSolidSegments)
 	{
-		if (segment.Start != 0 || segment.End != ANGLE_MAX)
+		if (cur < segment.Start)
 			MarkSegmentCulled(cur, segment.Start - 1);
 		cur = segment.End + 1;
 	}
-	if (cur != 0)
+	if (cur < ANGLE_MAX)
 		MarkSegmentCulled(cur, ANGLE_MAX);
 }
 
@@ -241,32 +309,6 @@ bool PolyCull::CheckBBox(float *bspcoord)
 
 bool PolyCull::GetAnglesForLine(double x1, double y1, double x2, double y2, angle_t &angle1, angle_t &angle2) const
 {
-#if 0
-	// Clip line to the portal clip plane
-	float distance1 = Vec4f::dot(PortalClipPlane, Vec4f((float)x1, (float)y1, 0.0f, 1.0f));
-	float distance2 = Vec4f::dot(PortalClipPlane, Vec4f((float)x2, (float)y2, 0.0f, 1.0f));
-	if (distance1 < 0.0f && distance2 < 0.0f)
-	{
-		return false;
-	}
-	else if (distance1 < 0.0f || distance2 < 0.0f)
-	{
-		double t1 = 0.0f, t2 = 1.0f;
-		if (distance1 < 0.0f)
-			t1 = clamp(distance1 / (distance1 - distance2), 0.0f, 1.0f);
-		else
-			t2 = clamp(distance2 / (distance1 - distance2), 0.0f, 1.0f);
-		double nx1 = x1 * (1.0 - t1) + x2 * t1;
-		double ny1 = y1 * (1.0 - t1) + y2 * t1;
-		double nx2 = x1 * (1.0 - t2) + x2 * t2;
-		double ny2 = y1 * (1.0 - t2) + y2 * t2;
-		x1 = nx1;
-		x2 = nx2;
-		y1 = ny1;
-		y2 = ny2;
-	}
-#endif
-
 	angle2 = PointToPseudoAngle(x1, y1);
 	angle1 = PointToPseudoAngle(x2, y2);
 	return !IsSegmentCulled(angle1, angle2);

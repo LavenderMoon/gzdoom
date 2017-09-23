@@ -101,16 +101,8 @@ void ThrowVMException(VMException *x);
 	}
 
 #define GETADDR(a,o,x) \
-	if (a == NULL) { ThrowAbortException(x, nullptr); } \
+	if (a == NULL) { ThrowAbortException(x, nullptr); return 0; } \
 	ptr = (VM_SBYTE *)a + o
-
-static const VM_UWORD ZapTable[16] =
-{
-	0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
-	0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
-	0xFF000000, 0xFF0000FF, 0xFF00FF00, 0xFF00FFFF,
-	0xFFFF0000, 0xFFFF00FF, 0xFFFFFF00, 0xFFFFFFFF
-};
 
 #ifdef NDEBUG
 #define WAS_NDEBUG 1
@@ -237,7 +229,7 @@ void VMFillParams(VMValue *params, VMFrame *callee, int numparam)
 }
 
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 bool AssertObject(void * ob)
 {
 	auto obj = (DObject*)ob;

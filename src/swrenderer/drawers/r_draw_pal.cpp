@@ -1396,11 +1396,11 @@ namespace swrenderer
 			int color = args.SolidColor();
 			do
 			{
-				uint32_t val = source[frac >> FRACBITS];
+				uint32_t val = colormap[source[frac >> FRACBITS]] << 2;
 
-				int r = (palette[*dest].r * (255-val) + palette[color].r * val) >> 10;
-				int g = (palette[*dest].g * (255-val) + palette[color].g * val) >> 10;
-				int b = (palette[*dest].b * (255-val) + palette[color].b * val) >> 10;
+				int r = (palette[*dest].r * (256-val) + palette[color].r * val) >> 10;
+				int g = (palette[*dest].g * (256-val) + palette[color].g * val) >> 10;
+				int b = (palette[*dest].b * (256-val) + palette[color].b * val) >> 10;
 				*dest = RGB256k.RGB[clamp(r,0,63)][clamp(g,0,63)][clamp(b,0,63)];
 
 				dest += pitch;
@@ -1439,11 +1439,11 @@ namespace swrenderer
 		int color = args.SolidColor();
 		do
 		{
-			uint32_t val = source[frac >> FRACBITS];
+			uint32_t val = colormap[source[frac >> FRACBITS]] << 2;
 
-			int r = (palette[*dest].r * (255) + palette[color].r * val) >> 10;
-			int g = (palette[*dest].g * (255) + palette[color].g * val) >> 10;
-			int b = (palette[*dest].b * (255) + palette[color].b * val) >> 10;
+			int r = (palette[*dest].r * (256) + palette[color].r * val) >> 10;
+			int g = (palette[*dest].g * (256) + palette[color].g * val) >> 10;
+			int b = (palette[*dest].b * (256) + palette[color].b * val) >> 10;
 			*dest = RGB256k.RGB[clamp(r,0,63)][clamp(g,0,63)][clamp(b,0,63)];
 
 			dest += pitch;
@@ -1834,6 +1834,60 @@ namespace swrenderer
 		}
 	}
 
+	/////////////////////////////////////////////////////////////////////////////
+
+	DrawScaledFuzzColumnPalCommand::DrawScaledFuzzColumnPalCommand(const SpriteDrawerArgs &drawerargs)
+	{
+		_x = drawerargs.FuzzX();
+		_yl = drawerargs.FuzzY1();
+		_yh = drawerargs.FuzzY2();
+		_destorg = drawerargs.Viewport()->GetDest(0, 0);
+		_pitch = drawerargs.Viewport()->RenderTarget->GetPitch();
+		_fuzzpos = fuzzpos;
+		_fuzzviewheight = fuzzviewheight;
+	}
+
+	void DrawScaledFuzzColumnPalCommand::Execute(DrawerThread *thread)
+	{
+		int x = _x;
+		int yl = MAX(_yl, 1);
+		int yh = MIN(_yh, _fuzzviewheight);
+
+		int count = thread->count_for_thread(yl, yh - yl + 1);
+		if (count <= 0) return;
+
+		int pitch = _pitch;
+		uint8_t *dest = _pitch * yl + x + (uint8_t*)_destorg;
+
+		int scaled_x = x * 200 / _fuzzviewheight;
+		int fuzz_x = fuzz_random_x_offset[scaled_x % FUZZ_RANDOM_X_SIZE] + _fuzzpos;
+
+		fixed_t fuzzstep = (200 << FRACBITS) / _fuzzviewheight;
+		fixed_t fuzzcount = FUZZTABLE << FRACBITS;
+		fixed_t fuzz = (fuzz_x << FRACBITS) + yl * fuzzstep;
+
+		dest = thread->dest_for_thread(yl, pitch, dest);
+		pitch *= thread->num_cores;
+
+		fuzz += fuzzstep * thread->skipped_by_thread(yl);
+		fuzz %= fuzzcount;
+		fuzzstep *= thread->num_cores;
+
+		uint8_t *map = NormalLight.Maps;
+
+		while (count > 0)
+		{
+			int offset = fuzzoffset[fuzz >> FRACBITS] << 8;
+			*dest = map[offset + *dest];
+			dest += pitch;
+
+			fuzz += fuzzstep;
+			if (fuzz >= fuzzcount) fuzz -= fuzzcount;
+
+			count--;
+		}
+	}
+
 	/////////////////////////////////////////////////////////////////////////
 
 	DrawFuzzColumnPalCommand::DrawFuzzColumnPalCommand(const SpriteDrawerArgs &args)
@@ -1964,8 +2018,8 @@ namespace swrenderer
 		_dest = args.Viewport()->GetDest(_x1, _y);
 		_xstep = args.TextureUStep();
 		_ystep = args.TextureVStep();
-		_xbits = args.TextureWidthBits();
-		_ybits = args.TextureHeightBits();
+		_srcwidth = args.TextureWidth();
+		_srcheight = args.TextureHeight();
 		_srcblend = args.SrcBlend();
 		_destblend = args.DestBlend();
 		_color = args.SolidColor();
@@ -2035,10 +2089,10 @@ namespace swrenderer
 		if (thread->line_skipped_by_thread(_y))
 			return;
 
-		dsfixed_t xfrac;
-		dsfixed_t yfrac;
-		dsfixed_t xstep;
-		dsfixed_t ystep;
+		uint32_t xfrac;
+		uint32_t yfrac;
+		uint32_t xstep;
+		uint32_t ystep;
 		uint8_t *dest;
 		const uint8_t *source = _source;
 		const uint8_t *colormap = _colormap;
@@ -2060,7 +2114,7 @@ namespace swrenderer
 		float viewpos_x = _viewpos_x;
 		float step_viewpos_x = _step_viewpos_x;
 
-		if (_xbits == 6 && _ybits == 6 && num_dynlights == 0)
+		if (_srcwidth == 64 && _srcheight == 64 && num_dynlights == 0)
 		{
 			// 64x64 is the most common case by far, so special case it.
 			do
@@ -2077,7 +2131,7 @@ namespace swrenderer
 				yfrac += ystep;
 			} while (--count);
 		}
-		else if (_xbits == 6 && _ybits == 6)
+		else if (_srcwidth == 64 && _srcheight == 64)
 		{
 			// 64x64 is the most common case by far, so special case it.
 			do
@@ -2097,14 +2151,13 @@ namespace swrenderer
 		}
 		else
 		{
-			uint8_t yshift = 32 - _ybits;
-			uint8_t xshift = yshift - _xbits;
-			int xmask = ((1 << _xbits) - 1) << _ybits;
+			uint32_t srcwidth = _srcwidth;
+			uint32_t srcheight = _srcheight;
 
 			do
 			{
 				// Current texture index in u,v.
-				spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+				spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 
 				// Lookup pixel from flat texture tile,
 				//  re-index using light/colormap.
@@ -2123,10 +2176,10 @@ namespace swrenderer
 		if (thread->line_skipped_by_thread(_y))
 			return;
 
-		dsfixed_t xfrac;
-		dsfixed_t yfrac;
-		dsfixed_t xstep;
-		dsfixed_t ystep;
+		uint32_t xfrac;
+		uint32_t yfrac;
+		uint32_t xstep;
+		uint32_t ystep;
 		uint8_t *dest;
 		const uint8_t *source = _source;
 		const uint8_t *colormap = _colormap;
@@ -2148,7 +2201,7 @@ namespace swrenderer
 		float viewpos_x = _viewpos_x;
 		float step_viewpos_x = _step_viewpos_x;
 
-		if (_xbits == 6 && _ybits == 6)
+		if (_srcwidth == 64 && _srcheight == 64)
 		{
 			// 64x64 is the most common case by far, so special case it.
 			do
@@ -2169,14 +2222,14 @@ namespace swrenderer
 		}
 		else
 		{
-			uint8_t yshift = 32 - _ybits;
-			uint8_t xshift = yshift - _xbits;
-			int xmask = ((1 << _xbits) - 1) << _ybits;
+			uint32_t srcwidth = _srcwidth;
+			uint32_t srcheight = _srcheight;
+
 			do
 			{
 				int texdata;
 
-				spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+				spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 				texdata = source[spot];
 				if (texdata != 0)
 				{
@@ -2195,10 +2248,10 @@ namespace swrenderer
 		if (thread->line_skipped_by_thread(_y))
 			return;
 
-		dsfixed_t xfrac;
-		dsfixed_t yfrac;
-		dsfixed_t xstep;
-		dsfixed_t ystep;
+		uint32_t xfrac;
+		uint32_t yfrac;
+		uint32_t xstep;
+		uint32_t ystep;
 		uint8_t *dest;
 		const uint8_t *source = _source;
 		const uint8_t *colormap = _colormap;
@@ -2226,7 +2279,7 @@ namespace swrenderer
 
 		if (!r_blendmethod)
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2245,12 +2298,12 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					uint32_t fg = num_dynlights != 0 ? AddLights(dynlights, num_dynlights, viewpos_x, colormap[source[spot]], source[spot]) : colormap[source[spot]];
 					uint32_t bg = *dest;
 					fg = fg2rgb[fg];
@@ -2265,7 +2318,7 @@ namespace swrenderer
 		}
 		else
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2285,12 +2338,12 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					uint32_t fg = num_dynlights != 0 ? AddLights(dynlights, num_dynlights, viewpos_x, colormap[source[spot]], source[spot]) : colormap[source[spot]];
 					uint32_t bg = *dest;
 					int r = MAX((palette[fg].r * _srcalpha + palette[bg].r * _destalpha)>>18, 0);
@@ -2311,10 +2364,10 @@ namespace swrenderer
 		if (thread->line_skipped_by_thread(_y))
 			return;
 
-		dsfixed_t xfrac;
-		dsfixed_t yfrac;
-		dsfixed_t xstep;
-		dsfixed_t ystep;
+		uint32_t xfrac;
+		uint32_t yfrac;
+		uint32_t xstep;
+		uint32_t ystep;
 		uint8_t *dest;
 		const uint8_t *source = _source;
 		const uint8_t *colormap = _colormap;
@@ -2342,7 +2395,7 @@ namespace swrenderer
 
 		if (!r_blendmethod)
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2368,14 +2421,14 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
 					uint8_t texdata;
 
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					texdata = source[spot];
 					if (texdata != 0)
 					{
@@ -2395,7 +2448,7 @@ namespace swrenderer
 		}
 		else
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2421,14 +2474,14 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
 					uint8_t texdata;
 
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					texdata = source[spot];
 					if (texdata != 0)
 					{
@@ -2453,10 +2506,10 @@ namespace swrenderer
 		if (thread->line_skipped_by_thread(_y))
 			return;
 
-		dsfixed_t xfrac;
-		dsfixed_t yfrac;
-		dsfixed_t xstep;
-		dsfixed_t ystep;
+		uint32_t xfrac;
+		uint32_t yfrac;
+		uint32_t xstep;
+		uint32_t ystep;
 		uint8_t *dest;
 		const uint8_t *source = _source;
 		const uint8_t *colormap = _colormap;
@@ -2483,7 +2536,7 @@ namespace swrenderer
 
 		if (!r_blendmethod)
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2506,12 +2559,12 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					uint32_t fg = num_dynlights != 0 ? AddLights(dynlights, num_dynlights, viewpos_x, colormap[source[spot]], source[spot]) : colormap[source[spot]];
 					uint32_t a = fg2rgb[fg] + bg2rgb[*dest];
 					uint32_t b = a;
@@ -2530,7 +2583,7 @@ namespace swrenderer
 		}
 		else
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2550,12 +2603,12 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					uint32_t fg = num_dynlights != 0 ? AddLights(dynlights, num_dynlights, viewpos_x, colormap[source[spot]], source[spot]) : colormap[source[spot]];
 					uint32_t bg = *dest;
 					int r = MAX((palette[fg].r * _srcalpha + palette[bg].r * _destalpha)>>18, 0);
@@ -2576,10 +2629,10 @@ namespace swrenderer
 		if (thread->line_skipped_by_thread(_y))
 			return;
 
-		dsfixed_t xfrac;
-		dsfixed_t yfrac;
-		dsfixed_t xstep;
-		dsfixed_t ystep;
+		uint32_t xfrac;
+		uint32_t yfrac;
+		uint32_t xstep;
+		uint32_t ystep;
 		uint8_t *dest;
 		const uint8_t *source = _source;
 		const uint8_t *colormap = _colormap;
@@ -2606,7 +2659,7 @@ namespace swrenderer
 
 		if (!r_blendmethod)
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2636,14 +2689,14 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
 					uint8_t texdata;
 
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					texdata = source[spot];
 					if (texdata != 0)
 					{
@@ -2667,7 +2720,7 @@ namespace swrenderer
 		}
 		else
 		{
-			if (_xbits == 6 && _ybits == 6)
+			if (_srcwidth == 64 && _srcheight == 64)
 			{
 				// 64x64 is the most common case by far, so special case it.
 				do
@@ -2693,14 +2746,14 @@ namespace swrenderer
 			}
 			else
 			{
-				uint8_t yshift = 32 - _ybits;
-				uint8_t xshift = yshift - _xbits;
-				int xmask = ((1 << _xbits) - 1) << _ybits;
+				uint32_t srcwidth = _srcwidth;
+				uint32_t srcheight = _srcheight;
+
 				do
 				{
 					uint8_t texdata;
 
-					spot = ((xfrac >> xshift) & xmask) + (yfrac >> yshift);
+					spot = (((xfrac >> 16) * srcwidth) >> 16) * srcheight + (((yfrac >> 16) * srcheight) >> 16);
 					texdata = source[spot];
 					if (texdata != 0)
 					{
@@ -3010,5 +3063,108 @@ namespace swrenderer
 	FString DrawParticleColumnPalCommand::DebugInfo()
 	{
 		return "DrawParticle";
+	}
+
+	/////////////////////////////////////////////////////////////////////////////
+
+	DrawVoxelBlocksPalCommand::DrawVoxelBlocksPalCommand(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount) : args(args), blocks(blocks), blockcount(blockcount)
+	{
+	}
+
+	void DrawVoxelBlocksPalCommand::Execute(DrawerThread *thread)
+	{
+		int destpitch = args.Viewport()->RenderTarget->GetPitch();
+		uint8_t *destorig = args.Viewport()->RenderTarget->GetBuffer();
+		const uint8_t *colormap = args.Colormap(args.Viewport());
+
+		for (int i = 0; i < blockcount; i++)
+		{
+			const VoxelBlock &block = blocks[i];
+
+			const uint8_t *source = block.voxels;
+
+			fixed_t fracpos = block.vPos;
+			fixed_t iscale = block.vStep;
+			int count = block.height;
+			int width = block.width;
+			int pitch = destpitch;
+			uint8_t *dest = destorig + (block.x + block.y * pitch);
+
+			count = thread->count_for_thread(block.y, count);
+			dest = thread->dest_for_thread(block.y, pitch, dest);
+			fracpos += iscale * thread->skipped_by_thread(block.y);
+			iscale *= thread->num_cores;
+			pitch *= thread->num_cores;
+
+			if (width == 1)
+			{
+				while (count > 0)
+				{
+					uint8_t color = colormap[source[fracpos >> FRACBITS]];
+					*dest = color;
+					dest += pitch;
+					fracpos += iscale;
+					count--;
+				}
+			}
+			else if (width == 2)
+			{
+				while (count > 0)
+				{
+					uint8_t color = colormap[source[fracpos >> FRACBITS]];
+					dest[0] = color;
+					dest[1] = color;
+					dest += pitch;
+					fracpos += iscale;
+					count--;
+				}
+			}
+			else if (width == 3)
+			{
+				while (count > 0)
+				{
+					uint8_t color = colormap[source[fracpos >> FRACBITS]];
+					dest[0] = color;
+					dest[1] = color;
+					dest[2] = color;
+					dest += pitch;
+					fracpos += iscale;
+					count--;
+				}
+			}
+			else if (width == 4)
+			{
+				while (count > 0)
+				{
+					uint8_t color = colormap[source[fracpos >> FRACBITS]];
+					dest[0] = color;
+					dest[1] = color;
+					dest[2] = color;
+					dest[3] = color;
+					dest += pitch;
+					fracpos += iscale;
+					count--;
+				}
+			}
+			else
+			{
+				while (count > 0)
+				{
+					uint8_t color = colormap[source[fracpos >> FRACBITS]];
+
+					for (int x = 0; x < width; x++)
+						dest[x] = color;
+
+					dest += pitch;
+					fracpos += iscale;
+					count--;
+				}
+			}
+		}
+	}
+
+	FString DrawVoxelBlocksPalCommand::DebugInfo()
+	{
+		return "DrawVoxelBlocks";
 	}
 }

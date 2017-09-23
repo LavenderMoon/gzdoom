@@ -49,10 +49,10 @@ namespace swrenderer
 		PalColumnCommand(const SpriteDrawerArgs &args);
 		FString DebugInfo() override { return "PalColumnCommand"; }
 
+		SpriteDrawerArgs args;
+
 	protected:
 		uint8_t AddLights(uint8_t fg, uint8_t material, uint32_t lit_r, uint32_t lit_g, uint32_t lit_b);
-		
-		SpriteDrawerArgs args;
 	};
 
 	class DrawColumnPalCommand : public PalColumnCommand { public: using PalColumnCommand::PalColumnCommand; void Execute(DrawerThread *thread) override; };
@@ -90,6 +90,23 @@ namespace swrenderer
 		int _fuzzviewheight;
 	};
 
+	class DrawScaledFuzzColumnPalCommand : public DrawerCommand
+	{
+	public:
+		DrawScaledFuzzColumnPalCommand(const SpriteDrawerArgs &drawerargs);
+		void Execute(DrawerThread *thread) override;
+		FString DebugInfo() override { return "DrawScaledFuzzColumnPalCommand"; }
+
+	private:
+		int _x;
+		int _yl;
+		int _yh;
+		uint8_t *_destorg;
+		int _pitch;
+		int _fuzzpos;
+		int _fuzzviewheight;
+	};
+
 	class PalSpanCommand : public DrawerCommand
 	{
 	public:
@@ -101,16 +118,16 @@ namespace swrenderer
 
 		const uint8_t *_source;
 		const uint8_t *_colormap;
-		dsfixed_t _xfrac;
-		dsfixed_t _yfrac;
+		uint32_t _xfrac;
+		uint32_t _yfrac;
 		int _y;
 		int _x1;
 		int _x2;
 		uint8_t *_dest;
-		dsfixed_t _xstep;
-		dsfixed_t _ystep;
-		int _xbits;
-		int _ybits;
+		uint32_t _xstep;
+		uint32_t _ystep;
+		int _srcwidth;
+		int _srcheight;
 		uint32_t *_srcblend;
 		uint32_t *_destblend;
 		int _color;
@@ -205,6 +222,19 @@ namespace swrenderer
 		uint32_t _fracposx;
 	};
 
+	class DrawVoxelBlocksPalCommand : public DrawerCommand
+	{
+	public:
+		DrawVoxelBlocksPalCommand(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount);
+		void Execute(DrawerThread *thread) override;
+		FString DebugInfo() override;
+
+	private:
+		SpriteDrawerArgs args;
+		const VoxelBlock *blocks;
+		int blockcount;
+	};
+
 	class SWPalDrawers : public SWPixelFormatDrawers
 	{
 	public:
@@ -232,7 +262,14 @@ namespace swrenderer
 		void FillAddClampColumn(const SpriteDrawerArgs &args) override { Queue->Push<FillColumnAddClampPalCommand>(args); }
 		void FillSubClampColumn(const SpriteDrawerArgs &args) override { Queue->Push<FillColumnSubClampPalCommand>(args); }
 		void FillRevSubClampColumn(const SpriteDrawerArgs &args) override { Queue->Push<FillColumnRevSubClampPalCommand>(args); }
-		void DrawFuzzColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawFuzzColumnPalCommand>(args); R_UpdateFuzzPos(args); }
+		void DrawFuzzColumn(const SpriteDrawerArgs &args) override
+		{
+			if (r_fuzzscale)
+				Queue->Push<DrawScaledFuzzColumnPalCommand>(args);
+			else
+				Queue->Push<DrawFuzzColumnPalCommand>(args);
+			R_UpdateFuzzPos(args);
+		}
 		void DrawAddColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawColumnAddPalCommand>(args); }
 		void DrawTranslatedColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawColumnTranslatedPalCommand>(args); }
 		void DrawTranslatedAddColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawColumnTlatedAddPalCommand>(args); }
@@ -244,6 +281,7 @@ namespace swrenderer
 		void DrawSubClampTranslatedColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawColumnSubClampTranslatedPalCommand>(args); }
 		void DrawRevSubClampColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawColumnRevSubClampPalCommand>(args); }
 		void DrawRevSubClampTranslatedColumn(const SpriteDrawerArgs &args) override { Queue->Push<DrawColumnRevSubClampTranslatedPalCommand>(args); }
+		void DrawVoxelBlocks(const SpriteDrawerArgs &args, const VoxelBlock *blocks, int blockcount) override { Queue->Push<DrawVoxelBlocksPalCommand>(args, blocks, blockcount); }
 		void DrawSpan(const SpanDrawerArgs &args) override { Queue->Push<DrawSpanPalCommand>(args); }
 		void DrawSpanMasked(const SpanDrawerArgs &args) override { Queue->Push<DrawSpanMaskedPalCommand>(args); }
 		void DrawSpanTranslucent(const SpanDrawerArgs &args) override { Queue->Push<DrawSpanTranslucentPalCommand>(args); }

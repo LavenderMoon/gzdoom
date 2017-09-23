@@ -81,6 +81,7 @@
 #include "doomstat.h"
 #include "r_utility.h"
 #include "g_levellocals.h"
+#include "s_sound.h"
 
 #include "stats.h"
 #include "st_start.h"
@@ -820,6 +821,13 @@ void ShowErrorPane(const char *text)
 	}
 }
 
+void PeekThreadedErrorPane()
+{
+	// Allow SendMessage from another thread to call its message handler so that it can display the crash dialog
+	MSG msg;
+	PeekMessage(&msg, 0, 0, 0, PM_NOREMOVE);
+}
+
 //==========================================================================
 //
 // DoMain
@@ -1060,6 +1068,7 @@ void DoMain (HINSTANCE hInstance)
 	{
 		I_ShutdownGraphics ();
 		RestoreConView ();
+		S_StopMusic(true);
 		I_FlushBufferedConsoleStuff();
 		if (error.GetMessage ())
 		{
@@ -1222,7 +1231,11 @@ LONG WINAPI CatchAllExceptions (LPEXCEPTION_POINTERS info)
 	// Otherwise, put the crashing thread to sleep and signal the main thread to clean up.
 	if (GetCurrentThreadId() == MainThreadID)
 	{
+#ifdef _M_X64
 		*info->ContextRecord = MainThreadContext;
+#else
+		info->ContextRecord->Eip = (DWORD_PTR)ExitFatally;
+#endif // _M_X64
 	}
 	else
 	{
@@ -1315,6 +1328,7 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int n
 	{
 		SetUnhandledExceptionFilter (CatchAllExceptions);
 
+#ifdef _M_X64
 		static bool setJumpResult = false;
 		RtlCaptureContext(&MainThreadContext);
 		if (setJumpResult)
@@ -1323,6 +1337,7 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int n
 			return 0;
 		}
 		setJumpResult = true;
+#endif // _M_X64
 	}
 #endif
 

@@ -108,7 +108,7 @@ namespace swrenderer
 
 		planeang += M_PI / 2;
 		double cosine = cos(planeang), sine = -sin(planeang);
-		x = pl->right - viewport->CenterX - 0.5;
+		x = pl->right - viewport->CenterX + 0.5;
 		rightxfrac = _xscale * (cosine + x * xstep);
 		rightyfrac = _yscale * (sine + x * ystep);
 		x = pl->left - viewport->CenterX + 0.5;
@@ -117,8 +117,16 @@ namespace swrenderer
 
 		basexfrac = leftxfrac;
 		baseyfrac = leftyfrac;
-		xstepscale = (rightxfrac - leftxfrac) / (pl->right - pl->left + 1);
-		ystepscale = (rightyfrac - leftyfrac) / (pl->right - pl->left + 1);
+		if (pl->left != pl->right)
+		{
+			xstepscale = (rightxfrac - leftxfrac) / (pl->right - pl->left);
+			ystepscale = (rightyfrac - leftyfrac) / (pl->right - pl->left);
+		}
+		else
+		{
+			xstepscale = 0;
+			ystepscale = 0;
+		}
 
 		minx = pl->left;
 
@@ -166,32 +174,16 @@ namespace swrenderer
 
 		auto viewport = Thread->Viewport.get();
 
-		double curxfrac = basexfrac + xstepscale * (x1 + 0.5 - minx);
-		double curyfrac = baseyfrac + ystepscale * (x1 + 0.5 - minx);
+		double curxfrac = basexfrac + xstepscale * (x1 - minx);
+		double curyfrac = baseyfrac + ystepscale * (x1 - minx);
 
 		double distance = viewport->PlaneDepth(y, planeheight);
 
-		if (drawerargs.TextureWidthBits() != 0)
-		{
-			drawerargs.SetTextureUStep(xs_ToFixed(32 - drawerargs.TextureWidthBits(), distance * xstepscale));
-			drawerargs.SetTextureUPos(xs_ToFixed(32 - drawerargs.TextureWidthBits(), distance * curxfrac + pviewx));
-		}
-		else
-		{
-			drawerargs.SetTextureUStep(0);
-			drawerargs.SetTextureUPos(0);
-		}
+		drawerargs.SetTextureUStep(distance * xstepscale / drawerargs.TextureWidth());
+		drawerargs.SetTextureUPos((distance * curxfrac + pviewx) / drawerargs.TextureWidth());
 
-		if (drawerargs.TextureHeightBits() != 0)
-		{
-			drawerargs.SetTextureVStep(xs_ToFixed(32 - drawerargs.TextureHeightBits(), distance * ystepscale));
-			drawerargs.SetTextureVPos(xs_ToFixed(32 - drawerargs.TextureHeightBits(), distance * curyfrac + pviewy));
-		}
-		else
-		{
-			drawerargs.SetTextureVStep(0);
-			drawerargs.SetTextureVPos(0);
-		}
+		drawerargs.SetTextureVStep(distance * ystepscale / drawerargs.TextureHeight());
+		drawerargs.SetTextureVPos((distance * curyfrac + pviewy) / drawerargs.TextureHeight());
 		
 		if (viewport->RenderTarget->IsBgra())
 		{
@@ -249,7 +241,7 @@ namespace swrenderer
 				float lz = (float)lightZ - drawerargs.dc_viewpos.Z;
 
 				// Precalculate the constant part of the dot here so the drawer doesn't have to.
-				bool is_point_light = (cur_node->lightsource->flags4 & MF4_ATTENUATE) != 0;
+				bool is_point_light = (cur_node->lightsource->lightflags & LF_ATTENUATE) != 0;
 				float lconstant = ly * ly + lz * lz;
 				float nlconstant = is_point_light ? lz * drawerargs.dc_normal.Z : 0.0f;
 

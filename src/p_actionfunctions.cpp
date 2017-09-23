@@ -979,6 +979,15 @@ DEFINE_ACTION_FUNCTION(AActor, A_StopSound)
 	return 0;
 }
 
+DEFINE_ACTION_FUNCTION(AActor, A_SoundVolume)
+{
+	PARAM_SELF_PROLOGUE(AActor);
+	PARAM_INT(channel);
+	PARAM_FLOAT(volume);
+	S_ChangeSoundVolume(self, channel, static_cast<float>(volume));
+	return 0;
+}
+
 //==========================================================================
 //
 // These come from a time when DECORATE constants did not exist yet and
@@ -3765,6 +3774,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Respawn)
 		self->flags5 = defs->flags5;
 		self->flags6 = defs->flags6;
 		self->flags7 = defs->flags7;
+		self->flags8 = defs->flags8;
 		self->SetState (self->SpawnState);
 		self->renderflags &= ~RF_INVISIBLE;
 
@@ -5903,9 +5913,9 @@ static void DoKill(AActor *killtarget, AActor *inflictor, AActor *source, FName 
 	{
 		int dmgFlags = DMG_NO_ARMOR | DMG_NO_FACTOR;
 
-		if (KILS_FOILINVUL)
+		if (flags & KILS_FOILINVUL)
 			dmgFlags |= DMG_FOILINVUL;
-		if (KILS_FOILBUDDHA)
+		if (flags & KILS_FOILBUDDHA)
 			dmgFlags |= DMG_FOILBUDDHA;
 	
 		if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))

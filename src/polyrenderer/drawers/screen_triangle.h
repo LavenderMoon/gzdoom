@@ -1,5 +1,5 @@
 /*
-**  Projected triangle drawer
+**  Polygon Doom software renderer
 **  Copyright (c) 2016 Magnus Norddahl
 **
 **  This software is provided 'as-is', without any express or implied
@@ -32,63 +32,86 @@ struct WorkerThreadData
 {
 	int32_t core;
 	int32_t num_cores;
+
+	// The number of lines to skip to reach the first line to be rendered by this thread
+	int skipped_by_thread(int first_line)
+	{
+		int core_skip = (num_cores - (first_line - core) % num_cores) % num_cores;
+		return core_skip;
+	}
 };
 
-struct TriVertex
+struct ShadedTriVertex
 {
-	TriVertex() { }
-	TriVertex(float x, float y, float z, float w, float u, float v) : x(x), y(y), z(z), w(w), u(u), v(v) { }
-
 	float x, y, z, w;
 	float u, v;
+	float clipDistance[3];
+	float worldX, worldY, worldZ;
 };
 
 struct ScreenTriangleStepVariables
 {
 	float W, U, V;
+	float WorldX, WorldY, WorldZ, Padding; // Padding so it can be loaded directly into a XMM register
 };
 
 struct TriDrawTriangleArgs
 {
 	uint8_t *dest;
 	int32_t pitch;
-	TriVertex *v1;
-	TriVertex *v2;
-	TriVertex *v3;
+	ShadedTriVertex *v1;
+	ShadedTriVertex *v2;
+	ShadedTriVertex *v3;
 	int32_t clipright;
 	int32_t clipbottom;
 	uint8_t *stencilValues;
 	uint32_t *stencilMasks;
 	int32_t stencilPitch;
-	uint32_t *subsectorGBuffer;
+	float *zbuffer;
 	const PolyDrawArgs *uniforms;
 	bool destBgra;
 	ScreenTriangleStepVariables gradientX;
 	ScreenTriangleStepVariables gradientY;
 
-	void CalculateGradients()
+	bool CalculateGradients()
 	{
-		gradientX.W = FindGradientX(v1->x, v1->y, v2->x, v2->y, v3->x, v3->y, v1->w, v2->w, v3->w);
-		gradientY.W = FindGradientY(v1->x, v1->y, v2->x, v2->y, v3->x, v3->y, v1->w, v2->w, v3->w);
-		gradientX.U = FindGradientX(v1->x, v1->y, v2->x, v2->y, v3->x, v3->y, v1->u * v1->w, v2->u * v2->w, v3->u * v3->w);
-		gradientY.U = FindGradientY(v1->x, v1->y, v2->x, v2->y, v3->x, v3->y, v1->u * v1->w, v2->u * v2->w, v3->u * v3->w);
-		gradientX.V = FindGradientX(v1->x, v1->y, v2->x, v2->y, v3->x, v3->y, v1->v * v1->w, v2->v * v2->w, v3->v * v3->w);
-		gradientY.V = FindGradientY(v1->x, v1->y, v2->x, v2->y, v3->x, v3->y, v1->v * v1->w, v2->v * v2->w, v3->v * v3->w);
+		float bottomX = (v2->x - v3->x) * (v1->y - v3->y) - (v1->x - v3->x) * (v2->y - v3->y);
+		float bottomY = (v1->x - v3->x) * (v2->y - v3->y) - (v2->x - v3->x) * (v1->y - v3->y);
+		if ((bottomX >= -FLT_EPSILON && bottomX <= FLT_EPSILON) || (bottomY >= -FLT_EPSILON && bottomY <= FLT_EPSILON))
+			return false;
+
+		gradientX.W = FindGradientX(bottomX, 1.0f, 1.0f, 1.0f);
+		gradientX.U = FindGradientX(bottomX, v1->u, v2->u, v3->u);
+		gradientX.V = FindGradientX(bottomX, v1->v, v2->v, v3->v);
+		gradientX.WorldX = FindGradientX(bottomX, v1->worldX, v2->worldX, v3->worldX);
+		gradientX.WorldY = FindGradientX(bottomX, v1->worldY, v2->worldY, v3->worldY);
+		gradientX.WorldZ = FindGradientX(bottomX, v1->worldZ, v2->worldZ, v3->worldZ);
+
+		gradientY.W = FindGradientY(bottomY, 1.0f, 1.0f, 1.0f);
+		gradientY.U = FindGradientY(bottomY, v1->u, v2->u, v3->u);
+		gradientY.V = FindGradientY(bottomY, v1->v, v2->v, v3->v);
+		gradientY.WorldX = FindGradientY(bottomY, v1->worldX, v2->worldX, v3->worldX);
+		gradientY.WorldY = FindGradientY(bottomY, v1->worldY, v2->worldY, v3->worldY);
+		gradientY.WorldZ = FindGradientY(bottomY, v1->worldZ, v2->worldZ, v3->worldZ);
+
+		return true;
 	}
 
 private:
-	static float FindGradientX(float x0, float y0, float x1, float y1, float x2, float y2, float c0, float c1, float c2)
+	float FindGradientX(float bottomX, float c0, float c1, float c2)
 	{
-		float top = (c1 - c2) * (y0 - y2) - (c0 - c2) * (y1 - y2);
-		float bottom = (x1 - x2) * (y0 - y2) - (x0 - x2) * (y1 - y2);
-		return top / bottom;
+		c0 *= v1->w;
+		c1 *= v2->w;
+		c2 *= v3->w;
+		return ((c1 - c2) * (v1->y - v3->y) - (c0 - c2) * (v2->y - v3->y)) / bottomX;
 	}
 
-	static float FindGradientY(float x0, float y0, float x1, float y1, float x2, float y2, float c0, float c1, float c2)
+	float FindGradientY(float bottomY, float c0, float c1, float c2)
 	{
-		float top = (c1 - c2) * (x0 - x2) - (c0 - c2) * (x1 - x2);
-		float bottom = (x0 - x2) * (y1 - y2) - (x1 - x2) * (y0 - y2);
-		return top / bottom;
+		c0 *= v1->w;
+		c1 *= v2->w;
+		c2 *= v3->w;
+		return ((c1 - c2) * (v1->x - v3->x) - (c0 - c2) * (v2->x - v3->x)) / bottomY;
 	}
 };
 
@@ -118,7 +141,8 @@ enum class TriBlendMode
 	FillRevSub,
 	FillAddSrcColor,
 	Skycap,
-	Fuzz
+	Fuzz,
+	FogBoundary
 };
 
 class ScreenTriangle
@@ -155,7 +179,7 @@ namespace TriScreenDrawerModes
 	struct SimpleShade { static const int Mode = (int)ShadeMode::Simple; };
 	struct AdvancedShade { static const int Mode = (int)ShadeMode::Advanced; };
 
-	enum class Samplers { Texture, Fill, Shaded, Stencil, Translated, Skycap, Fuzz };
+	enum class Samplers { Texture, Fill, Shaded, Stencil, Translated, Skycap, Fuzz, FogBoundary };
 	struct TextureSampler { static const int Mode = (int)Samplers::Texture; };
 	struct FillSampler { static const int Mode = (int)Samplers::Fill; };
 	struct ShadedSampler { static const int Mode = (int)Samplers::Shaded; };
@@ -163,6 +187,7 @@ namespace TriScreenDrawerModes
 	struct TranslatedSampler { static const int Mode = (int)Samplers::Translated; };
 	struct SkycapSampler { static const int Mode = (int)Samplers::Skycap; };
 	struct FuzzSampler { static const int Mode = (int)Samplers::Fuzz; };
+	struct FogBoundarySampler { static const int Mode = (int)Samplers::FogBoundary; };
 
 	static const int fuzzcolormap[FUZZTABLE] =
 	{

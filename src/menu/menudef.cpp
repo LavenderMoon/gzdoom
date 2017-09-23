@@ -54,6 +54,7 @@
 #include "vm.h"
 #include "types.h"
 #include "gameconfigfile.h"
+#include "m_argv.h"
 
 
 
@@ -69,6 +70,7 @@ PClass *DefaultListMenuClass;
 PClass *DefaultOptionMenuClass;
 
 void I_BuildALDeviceList(FOptionValues *opt);
+void I_BuildALResamplersList(FOptionValues *opt);
 
 DEFINE_GLOBAL_NAMED(OptionSettings, OptionMenuSettings)
 
@@ -511,7 +513,62 @@ static void ParseListMenuBody(FScanner &sc, DListMenuDescriptor *desc)
 static bool CheckCompatible(DMenuDescriptor *newd, DMenuDescriptor *oldd)
 {
 	if (oldd->mClass == nullptr) return true;
-	return oldd->mClass == newd->mClass;
+	return newd->mClass->IsDescendantOf(oldd->mClass);
+}
+
+static int GetGroup(DMenuItemBase *desc)
+{
+	if (desc->IsKindOf(NAME_OptionMenuItemCommand)) return 2;
+	if (desc->IsKindOf(NAME_OptionMenuItemSubmenu)) return 1;
+	if (desc->IsKindOf(NAME_OptionMenuItemControlBase)) return 3;
+	if (desc->IsKindOf(NAME_OptionMenuItemOptionBase)) return 4;
+	if (desc->IsKindOf(NAME_OptionMenuSliderBase)) return 4;
+	if (desc->IsKindOf(NAME_OptionMenuFieldBase)) return 4;
+	if (desc->IsKindOf(NAME_OptionMenuItemColorPicker)) return 4;
+	if (desc->IsKindOf(NAME_OptionMenuItemStaticText)) return 5;
+	if (desc->IsKindOf(NAME_OptionMenuItemStaticTextSwitchable)) return 5;
+	return 0;
+}
+
+static bool FindMatchingItem(DMenuItemBase *desc)
+{
+	int grp = GetGroup(desc);
+	if (grp == 0) return false;	// no idea what this is.
+	if (grp == 5) return true;	// static texts always match
+
+	FName name = desc->mAction;
+
+	if (grp == 1)
+	{
+		// Check for presence of menu
+		auto menu = MenuDescriptors.CheckKey(name);
+		if (menu == nullptr) return true;
+	}
+	else if (grp == 4)
+	{
+		static const FName CVarBlacklist[] = {
+			NAME_snd_waterlp, NAME_snd_output, NAME_snd_output_format, NAME_snd_speakermode, NAME_snd_resampler, NAME_AlwaysRun };
+
+		// Check for presence of CVAR and blacklist
+		auto cv = FindCVar(name.GetChars(), nullptr);
+		if (cv == nullptr) return true;
+
+		for (auto bname : CVarBlacklist)
+		{
+			if (name == bname) return true;
+		}
+	}
+
+	MenuDescriptorList::Iterator it(MenuDescriptors);
+	MenuDescriptorList::Pair *pair;
+	while (it.NextPair(pair))
+	{
+		for (auto it : pair->Value->mItems)
+		{
+			if (it->mAction == name && GetGroup(it) == grp) return true;
+		}
+	}
+	return false;
 }
 
 static bool ReplaceMenu(FScanner &sc, DMenuDescriptor *desc)
@@ -519,6 +576,38 @@ static bool ReplaceMenu(FScanner &sc, DMenuDescriptor *desc)
 	DMenuDescriptor **pOld = MenuDescriptors.CheckKey(desc->mMenuName);
 	if (pOld != nullptr && *pOld != nullptr) 
 	{
+		if ((*pOld)->mProtected)
+		{
+			// If this tries to replace an option menu with an option menu, let's append all new entries to the old menu.
+			// Otherwise bail out because for list menus it's not that simple.
+			if (desc->IsKindOf(RUNTIME_CLASS(DListMenuDescriptor)) || (*pOld)->IsKindOf(RUNTIME_CLASS(DListMenuDescriptor)))
+			{
+				sc.ScriptMessage("Cannot replace protected menu %s.", desc->mMenuName.GetChars());
+				return true;
+			}
+			for (int i = desc->mItems.Size()-1; i >= 0; i--)
+			{
+				if (FindMatchingItem(desc->mItems[i]))
+				{
+					desc->mItems.Delete(i);
+				}
+			}
+			if (desc->mItems.Size() > 0)
+			{
+				auto sep = CreateOptionMenuItemStaticText(" ");
+				(*pOld)->mItems.Push(sep);
+				sep = CreateOptionMenuItemStaticText("---------------", 1);
+				(*pOld)->mItems.Push(sep);
+				for (auto it : desc->mItems)
+				{
+					(*pOld)->mItems.Push(it);
+				}
+				desc->mItems.Clear();
+				//sc.ScriptMessage("Merged %d items into %s", desc->mItems.Size(), desc->mMenuName.GetChars());
+			}
+			return true;
+		}
+
 		if (!CheckCompatible(desc, *pOld))
 		{
 			sc.ScriptMessage("Tried to replace menu '%s' with a menu of different type", desc->mMenuName.GetChars());
@@ -873,6 +962,7 @@ static void ParseOptionMenu(FScanner &sc)
 	desc->mScrollTop = DefaultOptionMenuSettings->mScrollTop;
 	desc->mIndent =  DefaultOptionMenuSettings->mIndent;
 	desc->mDontDim =  DefaultOptionMenuSettings->mDontDim;
+	desc->mProtected = sc.CheckString("protected");
 
 	ParseOptionMenuBody(sc, desc);
 	ReplaceMenu(sc, desc);
@@ -924,7 +1014,7 @@ void M_ParseMenuDefs()
 	atterm(	DeinitMenus);
 	DeinitMenus();
 
-	int IWADMenu = Wads.CheckNumForName("MENUDEF", ns_global, FWadCollection::IWAD_FILENUM);
+	int IWADMenu = Wads.CheckNumForName("MENUDEF", ns_global, Wads.GetIwadNum());
 
 	while ((lump = Wads.FindLump ("MENUDEF", &lastlump)) != -1)
 	{
@@ -979,6 +1069,7 @@ void M_ParseMenuDefs()
 				sc.ScriptError("Unknown keyword '%s'", sc.String);
 			}
 		}
+		if (Args->CheckParm("-nocustommenu")) break;
 	}
 	DefaultListMenuClass = DefaultListMenuSettings->mClass;
 	DefaultListMenuSettings = nullptr;
@@ -1295,6 +1386,7 @@ static void InitMusicMenus()
 	DMenuDescriptor **gusmenu = MenuDescriptors.CheckKey("GusConfigMenu");
 	DMenuDescriptor **timiditymenu = MenuDescriptors.CheckKey("TimidityExeMenu");
 	DMenuDescriptor **wildmidimenu = MenuDescriptors.CheckKey("WildMidiConfigMenu");
+	DMenuDescriptor **timiditycfgmenu = MenuDescriptors.CheckKey("TimidityConfigMenu");
 	DMenuDescriptor **fluidmenu = MenuDescriptors.CheckKey("FluidPatchsetMenu");
 
 	const char *key, *value;
@@ -1335,6 +1427,11 @@ static void InitMusicMenus()
 					auto it = CreateOptionMenuItemCommand(key, FStringf("wildmidi_config %s", NicePath(value).GetChars()), true);
 					static_cast<DOptionMenuDescriptor*>(*wildmidimenu)->mItems.Push(it);
 				}
+				if (timiditycfgmenu != nullptr)
+				{
+					auto it = CreateOptionMenuItemCommand(key, FStringf("timidity_config \"%s\"", NicePath(value).GetChars()), true);
+					static_cast<DOptionMenuDescriptor*>(*timiditycfgmenu)->mItems.Push(it);
+				}
 			}
 		}
 	}
@@ -1345,6 +1442,8 @@ static void InitMusicMenus()
 		auto it = d->GetItem("GusConfigMenu");
 		if (it != nullptr) d->mItems.Delete(d->mItems.Find(it));
 		it = d->GetItem("WildMidiConfigMenu");
+		if (it != nullptr) d->mItems.Delete(d->mItems.Find(it));
+		it = d->GetItem("TimidityConfigMenu");
 		if (it != nullptr) d->mItems.Delete(d->mItems.Find(it));
 	}
 #ifdef _WIN32	// Different Timidity paths only make sense if they can be stored in arbitrary paths with local configs (i.e. not if things are done the Linux way)
@@ -1390,9 +1489,9 @@ static void InitKeySections()
 			for (unsigned i = 0; i < KeySections.Size(); i++)
 			{
 				FKeySection *sect = &KeySections[i];
-				DMenuItemBase *item = CreateOptionMenuItemStaticText(" ", false);
+				DMenuItemBase *item = CreateOptionMenuItemStaticText(" ");
 				menu->mItems.Push(item);
-				item = CreateOptionMenuItemStaticText(sect->mTitle, true);
+				item = CreateOptionMenuItemStaticText(sect->mTitle, 1);
 				menu->mItems.Push(item);
 				for (unsigned j = 0; j < sect->mActions.Size(); j++)
 				{
@@ -1432,6 +1531,11 @@ void M_CreateMenus()
 	if (opt != nullptr) 
 	{
 		I_BuildALDeviceList(*opt);
+	}
+	opt = OptionValues.CheckKey(NAME_Alresamplers);
+	if (opt != nullptr)
+	{
+		I_BuildALResamplersList(*opt);
 	}
 }
 

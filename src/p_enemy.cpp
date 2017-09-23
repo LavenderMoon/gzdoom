@@ -996,7 +996,8 @@ void P_NewChaseDir(AActor * actor)
 		if (!(actor->flags6 & MF6_NOFEAR))
 		{
 			if ((actor->target->player != NULL && (actor->target->player->cheats & CF_FRIGHTENING)) || 
-				(actor->flags4 & MF4_FRIGHTENED))
+				(actor->flags4 & MF4_FRIGHTENED) ||
+				(actor->target->flags8 & MF8_FRIGHTENING))
 			{
 				delta = -delta;
 			}
@@ -1888,6 +1889,9 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 		if (!(player->mo->flags & MF_SHOOTABLE))
 			continue;			// not shootable (observer or dead)
 
+		if (!((actor->flags ^ player->mo->flags) & MF_FRIENDLY))
+			continue;			// same +MF_FRIENDLY, ignore
+
 		if (player->cheats & CF_NOTARGET)
 			continue;			// no target
 
@@ -1987,7 +1991,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Look)
 			targ = NULL;
 		}
 
-		if (targ && targ->player && (targ->player->cheats & CF_NOTARGET))
+		if (targ && targ->player && ((targ->player->cheats & CF_NOTARGET) || !(targ->flags & MF_FRIENDLY)))
 		{
 			return 0;
 		}
@@ -2655,7 +2659,7 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 
 	// [RH] Scared monsters attack less frequently
 	if (((actor->target->player == NULL ||
-		!(actor->target->player->cheats & CF_FRIGHTENING)) &&
+		!((actor->target->player->cheats & CF_FRIGHTENING) || (actor->target->flags8 & MF8_FRIGHTENING))) &&
 		!(actor->flags4 & MF4_FRIGHTENED)) ||
 		pr_scaredycat() < 43)
 	{
@@ -3591,7 +3595,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 //
 //----------------------------------------------------------------------------
 
-int P_Massacre ()
+int P_Massacre (bool baddies)
 {
 	// jff 02/01/98 'em' cheat - kill all monsters
 	// partially taken from Chi's .46 port
@@ -3605,7 +3609,7 @@ int P_Massacre ()
 
 	while ( (actor = iterator.Next ()) )
 	{
-		if (!(actor->flags2 & MF2_DORMANT) && (actor->flags3 & MF3_ISMONSTER))
+		if (!(actor->flags2 & MF2_DORMANT) && (actor->flags3 & MF3_ISMONSTER) && (!baddies || !(actor->flags & MF_FRIENDLY)))
 		{
 			killcount += actor->Massacre();
 		}

@@ -42,6 +42,9 @@ void gl_PatchMenu();
 static TArray<FString>  m_Extensions;
 RenderContext gl;
 
+EXTERN_CVAR(Bool, gl_legacy_mode)
+extern int currentrenderer;
+
 //==========================================================================
 //
 // 
@@ -149,6 +152,7 @@ void gl_LoadExtensions()
 	{
 		double v1 = strtod(version, NULL);
 		double v2 = strtod(glversion, NULL);
+		if (v1 >= 3.0 && v1 < 3.3) v1 = 3.3;	// promote '3' to 3.3 to avoid falling back to the legacy path.
 		if (v2 < v1) version = glversion;
 		else Printf("Emulating OpenGL v %s\n", version);
 	}
@@ -202,8 +206,10 @@ void gl_LoadExtensions()
 			gl.flags |= RFL_SAMPLER_OBJECTS;
 		}
 	
-		// The minimum requirement for the modern render path are GL 3.0 + uniform buffers. Also exclude the Linux Mesa driver at GL 3.0 because it errors out on shader compilation.
-		if (gl_version < 3.0f || (gl_version < 3.1f && (!CheckExtension("GL_ARB_uniform_buffer_object") || strstr(gl.vendorstring, "X.Org") != nullptr)))
+		// The minimum requirement for the modern render path is GL 3.3.
+		// Although some GL 3.1 or 3.2 solutions may theoretically work they are usually too broken or too slow.
+		// unless, of course, we're simply using this as a software backend...
+		if ((gl_version < 3.3f && (currentrenderer==1)) || gl_version < 3.0f)
 		{
 			gl.legacyMode = true;
 			gl.lightmethod = LM_LEGACY;
@@ -311,8 +317,11 @@ void gl_LoadExtensions()
 		FUDGE_FUNC(glRenderbufferStorage, EXT);
 		FUDGE_FUNC(glBindRenderbuffer, EXT);
 		FUDGE_FUNC(glCheckFramebufferStatus, EXT);
-		gl_PatchMenu();
 	}
+
+	UCVarValue value;
+	value.Bool = gl.legacyMode;
+	gl_legacy_mode.ForceSet (value, CVAR_Bool);
 }
 
 //==========================================================================

@@ -202,7 +202,7 @@ FxLocalVariableDeclaration *FCompileContext::FindLocalVariable(FName name)
 
 static PContainerType *FindContainerType(FName name, FCompileContext &ctx)
 {
-	auto sym = ctx.Class->Symbols.FindSymbol(name, true);
+	auto sym = ctx.Class != nullptr? ctx.Class->Symbols.FindSymbol(name, true) : nullptr;
 	if (sym == nullptr) sym = ctx.CurGlobals->Symbols.FindSymbol(name, true);
 	if (sym && sym->IsKindOf(RUNTIME_CLASS(PSymbolType)))
 	{
@@ -3071,6 +3071,7 @@ FxExpression *FxMulDiv::Resolve(FCompileContext& ctx)
 					}
 				}
 				ValueType = left->ValueType;
+				break;
 			}
 			else if (right->IsVector() && left->IsNumeric())
 			{
@@ -3085,8 +3086,9 @@ FxExpression *FxMulDiv::Resolve(FCompileContext& ctx)
 					}
 				}
 				ValueType = right->ValueType;
+				break;
 			}
-			break;
+			// Incompatible operands, intentional fall-through
 
 		default:
 			// Vector modulus is not permitted
@@ -5911,6 +5913,82 @@ ExpEmit FxRandom2::Emit(VMFunctionBuilder *build)
 //
 //
 //==========================================================================
+FxRandomSeed::FxRandomSeed(FRandom * r, FxExpression *s, const FScriptPosition &pos, bool nowarn)
+	: FxExpression(EFX_Random, pos)
+{
+	EmitTail = false;
+	seed = new FxIntCast(s, nowarn);
+	rng = r;
+	ValueType = TypeVoid;
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+FxRandomSeed::~FxRandomSeed()
+{
+	SAFE_DELETE(seed);
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+FxExpression *FxRandomSeed::Resolve(FCompileContext &ctx)
+{
+	CHECKRESOLVED();
+	RESOLVE(seed, ctx);
+	return this;
+};
+
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+int BuiltinRandomSeed(VMValue *param, TArray<VMValue> &defaultparam, int numparam, VMReturn *ret, int numret)
+{
+	PARAM_PROLOGUE;
+	PARAM_POINTER(rng, FRandom)
+	PARAM_INT(seed);
+	rng->Init(seed);
+	return 0;
+}
+
+ExpEmit FxRandomSeed::Emit(VMFunctionBuilder *build)
+{
+	// Call DecoRandom to generate a random number.
+	VMFunction *callfunc;
+	PSymbol *sym = FindBuiltinFunction(NAME_BuiltinRandomSeed, BuiltinRandomSeed);
+
+	assert(sym->IsKindOf(RUNTIME_CLASS(PSymbolVMFunction)));
+	assert(((PSymbolVMFunction *)sym)->Function != nullptr);
+	callfunc = ((PSymbolVMFunction *)sym)->Function;
+
+	if (build->FramePointer.Fixed) EmitTail = false;	// do not tail call if the stack is in use
+	int opcode = (EmitTail ? OP_TAIL_K : OP_CALL_K);
+
+	build->Emit(OP_PARAM, 0, REGT_POINTER | REGT_KONST, build->GetConstantAddress(rng));
+	EmitParameter(build, seed, ScriptPosition);
+	build->Emit(opcode, build->GetConstantAddress(callfunc), 2, 0);
+
+	ExpEmit call;
+	if (EmitTail) call.Final = true;
+	return call;
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
 
 FxIdentifier::FxIdentifier(FName name, const FScriptPosition &pos)
 : FxExpression(EFX_Identifier, pos)
@@ -7537,6 +7615,7 @@ FxFunctionCall::FxFunctionCall(FName methodname, FName rngname, FArgumentList &a
 		case NAME_RandomPick:
 		case NAME_FRandomPick:
 		case NAME_Random2:
+		case NAME_SetRandomSeed:
 			RNG = FRandom::StaticFindRNG(rngname.GetChars());
 			break;
 
@@ -7786,6 +7865,14 @@ FxExpression *FxFunctionCall::Resolve(FCompileContext& ctx)
 		if (CheckArgSize(NAME_GetDefaultByType, ArgList, 1, 1, ScriptPosition))
 		{
 			func = new FxGetDefaultByType(ArgList[0]);
+			ArgList[0] = nullptr;
+		}
+		break;
+
+	case NAME_SetRandomSeed:
+		if (CheckArgSize(NAME_Random, ArgList, 1, 1, ScriptPosition))
+		{
+			func = new FxRandomSeed(RNG, ArgList[0], ScriptPosition, ctx.FromDecorate);
 			ArgList[0] = nullptr;
 		}
 		break;
@@ -11014,7 +11101,7 @@ ExpEmit FxRuntimeStateIndex::Emit(VMFunctionBuilder *build)
 //
 //==========================================================================
 
-FxMultiNameState::FxMultiNameState(const char *_statestring, const FScriptPosition &pos)
+FxMultiNameState::FxMultiNameState(const char *_statestring, const FScriptPosition &pos, PClassActor *checkclass)
 	:FxExpression(EFX_MultiNameState, pos)
 {
 	FName scopename;
@@ -11032,7 +11119,7 @@ FxMultiNameState::FxMultiNameState(const char *_statestring, const FScriptPositi
 	}
 	names = MakeStateNameList(statestring);
 	names.Insert(0, scopename);
-	scope = nullptr;
+	scope = checkclass;
 }
 
 //==========================================================================
@@ -11048,8 +11135,8 @@ FxExpression *FxMultiNameState::Resolve(FCompileContext &ctx)
 	int symlabel;
 
 	auto vclass = PType::toClass(ctx.Class);
-	assert(vclass != nullptr);
-	auto clstype = ValidateActor(vclass->Descriptor);
+	//assert(vclass != nullptr);
+	auto clstype = vclass == nullptr? nullptr : ValidateActor(vclass->Descriptor);
 
 	if (names[0] == NAME_None)
 	{

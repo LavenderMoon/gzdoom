@@ -186,6 +186,25 @@ bool FileExists (const char *filename)
 
 //==========================================================================
 //
+// DirExists
+//
+// Returns true if the given path exists and is a directory.
+//
+//==========================================================================
+
+bool DirExists(const char *filename)
+{
+	struct stat buff;
+
+	// [RH] Empty filenames are never there
+	if (filename == NULL || *filename == 0)
+		return false;
+
+	return stat(filename, &buff) == 0 && (buff.st_mode & S_IFDIR);
+}
+
+//==========================================================================
+//
 // DirEntryExists
 //
 // Returns true if the given path exists, be it a directory or a file.
@@ -477,16 +496,45 @@ const char *myasctime ()
 void DoCreatePath(const char *fn)
 {
 	char drive[_MAX_DRIVE];
-	char path[PATH_MAX];
-	char p[PATH_MAX];
-	int i;
+	char dir[_MAX_DIR];
+	_splitpath_s(fn, drive, sizeof drive, dir, sizeof dir, nullptr, 0, nullptr, 0);
 
-	_splitpath(fn,drive,path,NULL,NULL);
-	_makepath(p,drive,path,NULL,NULL);
-	i=(int)strlen(p);
-	if (p[i-1]=='/' || p[i-1]=='\\') p[i-1]=0;
-	if (*path) DoCreatePath(p);
-	_mkdir(p);
+	if ('\0' == *dir)
+	{
+		// Root/current/parent directory always exists
+		return;
+	}
+
+	char path[PATH_MAX];
+	_makepath_s(path, sizeof path, drive, dir, nullptr, nullptr);
+
+	if ('\0' == *path)
+	{
+		// No need to process empty relative path
+		return;
+	}
+
+	// Remove trailing path separator(s)
+	for (size_t i = strlen(path); 0 != i; --i)
+	{
+		char& lastchar = path[i - 1];
+
+		if ('/' == lastchar || '\\' == lastchar)
+		{
+			lastchar = '\0';
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	// Create all directories for given path
+	if ('\0' != *path)
+	{
+		DoCreatePath(path);
+		_mkdir(path);
+	}
 }
 
 void CreatePath(const char *fn)

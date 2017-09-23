@@ -103,7 +103,7 @@
 static FRandom pr_skullpop ("SkullPop");
 
 // [SP] Allows respawn in single player
-CVAR(Bool, sv_singleplayerrespawn, false, CVAR_SERVERINFO | CVAR_LATCH)
+CVAR(Bool, sv_singleplayerrespawn, false, CVAR_SERVERINFO | CVAR_CHEAT)
 
 // Variables for prediction
 CVAR (Bool, cl_noprediction, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
@@ -614,7 +614,7 @@ void player_t::SetFOV(float fov)
 		{
 			Net_WriteByte(DEM_MYFOV);
 		}
-		Net_WriteByte((uint8_t)clamp<float>(fov, 5.f, 179.f));
+		Net_WriteFloat(clamp<float>(fov, 5.f, 179.f));
 	}
 }
 
@@ -962,7 +962,7 @@ void APlayerPawn::BeginPlay ()
 		int wadnorm = Wads.GetLumpFile(spritenorm);
 		int wadcrouch = Wads.GetLumpFile(spritenorm);
 		
-		if (wadnorm > FWadCollection::IWAD_FILENUM && wadcrouch <= FWadCollection::IWAD_FILENUM) 
+		if (wadnorm > Wads.GetIwadNum() && wadcrouch <= Wads.GetIwadNum())
 		{
 			// Question: Add an option / disable crouching or do what?
 			crouchsprite = 0;
@@ -2105,7 +2105,7 @@ void P_FallingDamage (AActor *actor)
 		}
 		if (vel >= 63)
 		{ // automatic death
-			damage = 1000000;
+			damage = TELEFRAG_DAMAGE;
 		}
 		else
 		{
@@ -2126,7 +2126,7 @@ void P_FallingDamage (AActor *actor)
 		}
 		if (vel >= 84)
 		{ // automatic death
-			damage = 1000000;
+			damage = TELEFRAG_DAMAGE;
 		}
 		else
 		{
@@ -2156,9 +2156,10 @@ void P_FallingDamage (AActor *actor)
 	{
 		S_Sound (actor, CHAN_AUTO, "*land", 1, ATTN_NORM);
 		P_NoiseAlert (actor, actor, true);
-		if (damage == 1000000 && (actor->player->cheats & (CF_GODMODE | CF_BUDDHA)))
+		if (damage >= TELEFRAG_DAMAGE && ((actor->player->cheats & (CF_GODMODE | CF_BUDDHA) ||
+			(actor->FindInventory(PClass::FindActor(NAME_PowerBuddha), true) != nullptr))))
 		{
-			damage = 999;
+			damage = TELEFRAG_DAMAGE - 1;
 		}
 	}
 	P_DamageMobj (actor, NULL, NULL, damage, NAME_Falling);

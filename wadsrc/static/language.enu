@@ -711,6 +711,8 @@ OB_IRONLICH = "%o was devastated by an ironlich.";
 OB_IRONLICHHIT = "%o got up-close and personal with an ironlich.";
 OB_BONEKNIGHT = "%o was axed by an undead warrior.";
 OB_BONEKNIGHTHIT = "%o was slain by an undead warrior.";
+OB_MINOTAUR = "%o was blasted into cinders by a Maulotaur.";
+OB_MINOTAURHIT = "%o was pulped by a Maulotaur.";
 OB_MUMMY = "%o was smashed by a golem.";
 OB_MUMMYLEADER = "%o was shrieked to death by a nitrogolem.";
 OB_SNAKE = "%o was rattled by an ophidian.";
@@ -1814,7 +1816,9 @@ DSPLYMNU_ATTACHEDSURFACES		= "Use attached surfaces"; // Not used
 DSPLYMNU_SKYMODE				= "Sky render mode";
 DSPLYMNU_LINEARSKY				= "Linear skies";
 DSPLYMNU_GZDFULLBRIGHT			= "Fullbright overrides sector color";
+DSPLYMNU_SCALEFUZZ				= "Scale fuzz effect";
 DSPLYMNU_DRAWFUZZ				= "Use fuzz effect";
+DSPLYMNU_OLDTRANS				= "Classic Transparency";
 DSPLYMNU_TRANSSOUL				= "Lost Soul translucency";
 DSPLYMNU_FAKECONTRAST			= "Use fake contrast";
 DSPLYMNU_ROCKETTRAILS			= "Rocket Trails";
@@ -2137,6 +2141,7 @@ SNDMNU_MODREPLAYER		= "Module replayer options";
 OPENALMNU_TITLE				= "OPENAL OPTIONS";
 OPENALMNU_PLAYBACKDEVICE	= "Playback device";
 OPENALMNU_ENABLEEFX			= "Enable EFX";
+OPENALMNU_RESAMPLER			= "Resampler";
 
 // Advanced Sound Options
 ADVSNDMNU_TITLE				= "ADVANCED SOUND OPTIONS";
@@ -2158,6 +2163,7 @@ ADVSNDMNU_REVERB			= "Reverb";
 ADVSNDMNU_FLUIDVOICES		= "MIDI voices";
 ADVSNDMNU_TIMIDITY			= "Timidity++";
 ADVSNDMNU_TIMIDITYEXE		= "Path for executable";
+ADVSNDMNU_TIMIDITYCONFIG	= "Timidity config file";
 ADVSNDMNU_TIMIDITYCHORUS	= "Chorus";
 ADVSNDMNU_TIMIDITYVOLUME	= "Relative volume";
 ADVSNDMNU_WILDMIDI			= "WildMidi";
@@ -2186,6 +2192,8 @@ VIDMNU_HIDPI			= "Retina/HiDPI support";
 VIDMNU_ASPECTRATIO		= "Aspect ratio";
 VIDMNU_FORCEASPECT		= "Force aspect ratio";
 VIDMNU_5X4ASPECTRATIO	= "Enable 5:4 aspect ratio";
+VIDMNU_SCALEMODE		= "Resolution scale";
+VIDMNU_SCALEFACTOR		= "Scale Factor";
 VIDMNU_ENTERTEXT		= "Press ENTER to set mode";
 VIDMNU_TESTTEXT1		= "T to test mode for 5 seconds";
 VIDMNU_TESTTEXT2		= "Please wait 5 seconds...";
@@ -2360,10 +2368,19 @@ OPTVAL_EVERYTHING			= "Everything";
 OPTVAL_FULLSCREENONLY		= "Fullscreen only";
 OPTVAL_GL 					= "OpenGL";
 OPTVAL_D3D					= "Direct3D";
+OPTVAL_SDL					= "SDL";
+OPTVAL_COCOA				= "Cocoa";
 OPTVAL_HWPOLY				= "OpenGL-Accelerated";
 OPTVAL_SWDOOM				= "Doom Software Renderer";
 OPTVAL_DEDICATED			= "High-Performance";
 OPTVAL_INTEGRATED			= "Power-Saving";
+OPTVAL_VANILLA				= "Vanilla";
+OPTVAL_VTFZDOOM				= "ZDoom (Forced)";
+OPTVAL_VTFVANILLA			= "Vanilla (Forced)";
+OPTVAL_VTAZDOOM				= "Auto (ZDoom Preferred)";
+OPTVAL_VTAVANILLA			= "Auto (Vanilla Preferred)";
+OPTVAL_SCALENEAREST			= "Scaled (Nearest)";
+OPTVAL_SCALELINEAR			= "Scaled (Linear)";
 
 // Colors
 C_BRICK					= "\cabrick";
@@ -2645,7 +2662,8 @@ MUSIC_DM2INT = "dm2int";
 DSPLYMNU_GLOPT		= "OpenGL Renderer";
 DSPLYMNU_SWOPT		= "Software Renderer";
 DSPLYMNU_GAMMA		= "Gamma correction";
-DSPLYMNU_CONTRAST 	="Contrast";
+DSPLYMNU_CONTRAST 	= "Contrast";
+DSPLYMNU_SATURATION = "Saturation";
 DSPLYMNU_HWGAMMA	= "Hardware Gamma";
 
 // OpenGL Options
@@ -2670,13 +2688,14 @@ GLTEXMNU_TRIMSPREDGE	= "Trim sprite edges";
 GLTEXMNU_SORTDRAWLIST 	= "Sort draw lists by texture";
 
 // Dynamic Light Options
-GLLIGHTMNU_TITLE 			= "DYNAMIC LIGHTS";
-GLLIGHTMNU_LIGHTSENABLED 	= "Dynamic Lights (OpenGL)";
-GLLIGHTMNU_LIGHTDEFS		= "Enable light definitions";
-GLLIGHTMNU_CLIPLIGHTS 		= "Clip lights";
-GLLIGHTMNU_LIGHTSPRITES 	= "Lights affect sprites";
-GLLIGHTMNU_LIGHTPARTICLES 	= "Lights affect particles";
-GLLIGHTMNU_LIGHTSHADOWMAP 	= "Light shadowmaps";
+GLLIGHTMNU_TITLE					= "DYNAMIC LIGHTS";
+GLLIGHTMNU_LIGHTSENABLED			= "Dynamic Lights (OpenGL)";
+GLLIGHTMNU_LIGHTDEFS				= "Enable light definitions";
+GLLIGHTMNU_CLIPLIGHTS				= "Clip lights";
+GLLIGHTMNU_LIGHTSPRITES				= "Lights affect sprites";
+GLLIGHTMNU_LIGHTPARTICLES			= "Lights affect particles";
+GLLIGHTMNU_LIGHTSHADOWMAP			= "Light shadowmaps";
+GLLIGHTMNU_LIGHTSHADOWMAPQUALITY	= "Shadowmap quality";
 
 // OpenGL Preferences
 GLPREFMNU_TITLE 				= "OPENGL PREFERENCES";
@@ -2696,6 +2715,7 @@ GLPREFMNU_SPRBILLFACECAMERA 	= "Sprites face camera";
 GLPREFMNU_PARTICLESTYLE 		= "Particle style";
 GLPREFMNU_AMBLIGHT 				= "Ambient light level";
 GLPREFMNU_RENDERQUALITY 		= "Rendering quality";
+GLPREFMNU_MENUBLUR				= "Menu Blur";
 GLPREFMNU_VRMODE 				= "Stereo 3D VR";
 GLPREFMNU_VRQUADSTEREO 			= "Enable Quad Stereo";
 GLPREFMNU_MULTISAMPLE			= "Multisample";

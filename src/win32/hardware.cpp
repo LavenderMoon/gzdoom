@@ -56,6 +56,7 @@ EXTERN_CVAR (Bool, vid_forceddraw)
 
 CVAR(Int, win_x, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Int, win_y, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, win_maximized, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 extern HWND Window;
 
@@ -99,7 +100,7 @@ CUSTOM_CVAR(Int, vid_gpuswitch, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINI
 }
 
 // Software OpenGL canvas
-CUSTOM_CVAR(Bool, vid_used3d, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+CUSTOM_CVAR(Bool, vid_glswfb, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	if ((self ? 1 : 0) != currentcanvas)
 		Printf("You must restart " GAMENAME " for this change to take effect.\n");
@@ -177,7 +178,7 @@ void I_InitGraphics ()
 	val.Bool = !!Args->CheckParm ("-devparm");
 	ticker.SetGenericRepDefault (val, CVAR_Bool);
 
-	if (currentcanvas == 1) // Software Canvas: 1 = D3D or DirectDraw, 0 = OpenGL
+	if (currentcanvas == 0) // Software Canvas: 0 = D3D or DirectDraw, 1 = OpenGL
 		if (currentrenderer == 1)
 			Video = gl_CreateVideo();
 		else
@@ -201,14 +202,14 @@ static void I_DeleteRenderer()
 void I_CreateRenderer()
 {
 	currentrenderer = vid_renderer;
-	currentcanvas = vid_used3d;
+	currentcanvas = vid_glswfb;
 	if (currentrenderer == 1)
 		Printf("Renderer: OpenGL\n");
-	else if (currentcanvas == 0)
-		Printf("Renderer: Software on OpenGL\n");
-	else if (currentcanvas == 1 && vid_forceddraw == false)
-		Printf("Renderer: Software on Direct3D\n");
 	else if (currentcanvas == 1)
+		Printf("Renderer: Software on OpenGL\n");
+	else if (currentcanvas == 0 && vid_forceddraw == false)
+		Printf("Renderer: Software on Direct3D\n");
+	else if (currentcanvas == 0)
 		Printf("Renderer: Software on DirectDraw\n");
 	else
 		Printf("Renderer: Unknown\n");
@@ -382,6 +383,8 @@ void I_SaveWindowedPos ()
 			win_x = wrect.left;
 			win_y = wrect.top;
 		}
+
+		win_maximized = IsZoomed(Window) == TRUE;
 	}
 }
 
@@ -409,6 +412,9 @@ void I_RestoreWindowedPos ()
 		KeepWindowOnScreen (winx, winy, winw, winh, scrwidth, scrheight);
 	}
 	MoveWindow (Window, winx, winy, winw, winh, TRUE);
+
+	if (win_maximized && !Args->CheckParm("-0"))
+		ShowWindow(Window, SW_MAXIMIZE);
 }
 
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
@@ -419,8 +425,8 @@ CUSTOM_CVAR(Bool, swtruecolor, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITC
 	// way to force a CreateFramebuffer call without a lot of refactoring.
 	if (currentrenderer == 0)
 	{
-		NewWidth = screen->GetWidth();
-		NewHeight = screen->GetHeight();
+		NewWidth = screen->VideoWidth;
+		NewHeight = screen->VideoHeight;
 		NewBits = DisplayBits;
 		setmodeneeded = true;
 	}
@@ -428,8 +434,8 @@ CUSTOM_CVAR(Bool, swtruecolor, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITC
 
 CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
 {
-	NewWidth = screen->GetWidth();
-	NewHeight = screen->GetHeight();
+	NewWidth = screen->VideoWidth;
+	NewHeight = screen->VideoHeight;
 	NewBits = DisplayBits;
 	setmodeneeded = true;
 }
@@ -443,8 +449,8 @@ CUSTOM_CVAR (Float, vid_winscale, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 	else if (Video)
 	{
 		Video->SetWindowedScale (self);
-		NewWidth = screen->GetWidth();
-		NewHeight = screen->GetHeight();
+		NewWidth = screen->VideoWidth;
+		NewHeight = screen->VideoHeight;
 		NewBits = DisplayBits;
 		//setmodeneeded = true;	// This CVAR doesn't do anything and only causes problems!
 	}
